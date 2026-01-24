@@ -1,35 +1,57 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 interface Message {
-  id: number;
+  id: string;
   text: string;
   sender: "user" | "bot";
   timestamp: Date;
 }
 
-const initialMessages: Message[] = [
-  {
-    id: 1,
-    text: "Hi there! 👋 I'm BooBoo Buddy, your friendly health assistant. How can I help you today? You can ask me about symptoms, general health tips, or describe how you're feeling.",
-    sender: "bot",
-    timestamp: new Date(),
-  },
-];
+interface ApiMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+}
+
+interface Clinic {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  rating: number | null;
+  distance?: number;
+  availableSlots: string[];
+  specialties: string[];
+}
+
+interface ToolResult {
+  toolName: string;
+  result: {
+    clinics?: Clinic[];
+    confirmed?: boolean;
+    appointmentTime?: string;
+    confirmationCode?: string;
+    message?: string;
+  };
+}
 
 const quickReplies = [
-  "I have a headache",
-  "I'm feeling tired",
-  "I have a cold",
-  "General health tips",
+  "My child is sick",
+  "Fever and cough",
+  "Stomach ache",
+  "Need a doctor",
 ];
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -41,57 +63,114 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  const generateBotResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
+  // Start a new conversation on mount
+  const initConversation = useCallback(async () => {
+    if (isInitialized) return;
 
-    if (lowerMessage.includes("headache")) {
-      return "I'm sorry to hear you have a headache! 🤕 Here are some tips:\n\n• Stay hydrated - drink plenty of water\n• Rest in a quiet, dark room\n• Try a cold or warm compress on your forehead\n• Over-the-counter pain relievers may help\n\nIf your headache is severe, sudden, or accompanied by other symptoms like fever or stiff neck, please consult a healthcare professional immediately.";
+    try {
+      setIsTyping(true);
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      if (!response.ok) throw new Error("Failed to start conversation");
+
+      const data = await response.json();
+      setConversationId(data.conversationId);
+
+      // Add the bot's greeting
+      setMessages([
+        {
+          id: data.message.id,
+          text: data.message.content,
+          sender: "bot",
+          timestamp: new Date(data.message.createdAt),
+        },
+      ]);
+      setIsInitialized(true);
+    } catch (error) {
+      console.error("Error starting conversation:", error);
+      // Fallback greeting if API fails
+      setMessages([
+        {
+          id: "fallback-1",
+          text: "Hi there! 👋 I'm BooBoo Buddy, your friendly health assistant. I'm having trouble connecting right now, but please try sending a message!",
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
+      setIsInitialized(true);
+    } finally {
+      setIsTyping(false);
+    }
+  }, [isInitialized]);
+
+  useEffect(() => {
+    initConversation();
+  }, [initConversation]);
+
+  const sendMessageToApi = async (userMessage: string): Promise<{
+    message: ApiMessage;
+    toolResults?: ToolResult[];
+  }> => {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversationId,
+        message: userMessage,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to send message");
     }
 
-    if (lowerMessage.includes("tired") || lowerMessage.includes("fatigue")) {
-      return "Feeling tired can have many causes! 😴 Here are some suggestions:\n\n• Ensure you're getting 7-9 hours of sleep\n• Stay hydrated throughout the day\n• Take short breaks during work\n• Consider light exercise - it can boost energy!\n• Check your diet - eat balanced meals\n\nIf fatigue persists for more than 2 weeks, it's a good idea to consult with a doctor.";
+    const data = await response.json();
+
+    // Update conversation ID if this was a new conversation
+    if (!conversationId && data.conversationId) {
+      setConversationId(data.conversationId);
     }
 
-    if (
-      lowerMessage.includes("cold") ||
-      lowerMessage.includes("runny nose") ||
-      lowerMessage.includes("congestion")
-    ) {
-      return "Having a cold is no fun! 🤧 Here's what might help:\n\n• Rest as much as possible\n• Drink warm fluids like tea or soup\n• Use a humidifier\n• Gargle with salt water for sore throat\n• Try over-the-counter cold medicines\n\nMost colds resolve in 7-10 days. If symptoms worsen or you develop a high fever, please see a doctor.";
-    }
-
-    if (
-      lowerMessage.includes("health tips") ||
-      lowerMessage.includes("advice")
-    ) {
-      return "Here are some general health tips to keep you feeling great! 💪\n\n• Exercise regularly - aim for 30 minutes daily\n• Eat a balanced diet with plenty of fruits and vegetables\n• Stay hydrated - drink 8 glasses of water daily\n• Get 7-9 hours of quality sleep\n• Manage stress through meditation or hobbies\n• Don't skip regular check-ups with your doctor\n\nIs there anything specific you'd like to know more about?";
-    }
-
-    if (
-      lowerMessage.includes("hello") ||
-      lowerMessage.includes("hi") ||
-      lowerMessage.includes("hey")
-    ) {
-      return "Hello! 😊 I'm here to help with any health-related questions you might have. What's on your mind today?";
-    }
-
-    if (lowerMessage.includes("thank")) {
-      return "You're very welcome! 💚 I'm always here if you need more help. Take care of yourself!";
-    }
-
-    return (
-      "I understand you're asking about \"" +
-      userMessage +
-      "\". While I can provide general health information, please remember I'm not a substitute for professional medical advice. 🩺\n\nCould you tell me more about what you're experiencing? Or feel free to ask about:\n• Specific symptoms\n• General wellness tips\n• When to see a doctor"
-    );
+    return data;
   };
 
-  const handleSendMessage = (text?: string) => {
+  const formatToolResults = (toolResults?: ToolResult[]): string => {
+    if (!toolResults || toolResults.length === 0) return "";
+
+    let formatted = "";
+    for (const tr of toolResults) {
+      if (tr.toolName === "clinic_search" && tr.result.clinics) {
+        formatted += "\n\n📍 **Nearby Clinics Found:**\n";
+        tr.result.clinics.forEach((clinic, index) => {
+          formatted += `\n${index + 1}. **${clinic.name}**`;
+          formatted += `\n   📍 ${clinic.address}`;
+          formatted += `\n   📞 ${clinic.phone}`;
+          if (clinic.rating) formatted += `\n   ⭐ ${clinic.rating}/5`;
+          if (clinic.distance) formatted += `\n   🚗 ${clinic.distance} miles`;
+          if (clinic.availableSlots.length > 0) {
+            const nextSlot = new Date(clinic.availableSlots[0]);
+            formatted += `\n   ⏰ Next: ${nextSlot.toLocaleString()}`;
+          }
+        });
+      } else if (tr.toolName === "schedule_call" && tr.result.confirmed) {
+        formatted += `\n\n✅ **Appointment Confirmed!**`;
+        formatted += `\n📅 ${new Date(tr.result.appointmentTime!).toLocaleString()}`;
+        formatted += `\n🔖 Confirmation: ${tr.result.confirmationCode}`;
+      }
+    }
+    return formatted;
+  };
+
+  const handleSendMessage = async (text?: string) => {
     const messageText = text || inputValue.trim();
-    if (!messageText) return;
+    if (!messageText || isTyping) return;
 
     const userMessage: Message = {
-      id: messages.length + 1,
+      id: `user-${Date.now()}`,
       text: messageText,
       sender: "user",
       timestamp: new Date(),
@@ -101,17 +180,35 @@ export default function ChatPage() {
     setInputValue("");
     setIsTyping(true);
 
-    // Simulate bot response delay
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: messages.length + 2,
-        text: generateBotResponse(messageText),
+    try {
+      const response = await sendMessageToApi(messageText);
+
+      // Format the response with any tool results
+      let botText = response.message.content;
+      const toolFormatted = formatToolResults(response.toolResults);
+      if (toolFormatted) {
+        botText += toolFormatted;
+      }
+
+      const botMessage: Message = {
+        id: response.message.id,
+        text: botText,
+        sender: "bot",
+        timestamp: new Date(response.message.createdAt),
+      };
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        text: "I'm sorry, I'm having trouble responding right now. Please try again in a moment.",
         sender: "bot",
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, botResponse]);
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -156,7 +253,9 @@ export default function ChatPage() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex ${
+                message.sender === "user" ? "justify-end" : "justify-start"
+              }`}
             >
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-3 ${
@@ -234,7 +333,8 @@ export default function ChatPage() {
             <button
               key={reply}
               onClick={() => handleSendMessage(reply)}
-              className="shrink-0 rounded-full border border-teal-300 bg-white px-4 py-1.5 text-sm text-teal-700 transition-colors hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-800 dark:text-teal-400 dark:hover:bg-zinc-700"
+              disabled={isTyping}
+              className="shrink-0 rounded-full border border-teal-300 bg-white px-4 py-1.5 text-sm text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-teal-700 dark:bg-zinc-800 dark:text-teal-400 dark:hover:bg-zinc-700"
             >
               {reply}
             </button>
@@ -252,12 +352,13 @@ export default function ChatPage() {
               onKeyDown={handleKeyPress}
               placeholder="Type your health question..."
               rows={1}
-              className="w-full resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              disabled={isTyping}
+              className="w-full resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
             />
           </div>
           <button
             onClick={() => handleSendMessage()}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isTyping}
             className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-600 text-white transition-colors hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg

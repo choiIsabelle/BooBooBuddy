@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Conversation session
+model Conversation {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Current workflow state (stored as string for SQLite compatibility)
+  state     String @default("GREETING")
+  
+  // Collected information
+  childName       String?
+  childAge        Int?
+  symptoms        String   @default("[]") // JSON array stored as string
+  symptomSeverity String?   // mild, moderate, severe
+  duration        String?
+  location        String?   // for clinic search
+  
+  // Selected clinic/appointment
+  selectedClinicId String?
+  selectedClinic   Clinic?   @relation(fields: [selectedClinicId], references: [id])
+  appointmentTime  DateTime?
+  
+  messages  Message[]
+  toolCalls ToolCall[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  role    String  // USER, ASSISTANT, SYSTEM, TOOL
+  content String
+  
+  // For assistant messages, store the raw LLM response
+  rawLlmResponse String? // JSON stored as string
+}
+
+model ToolCall {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  toolName   String
+  toolInput  String  // JSON stored as string
+  toolOutput String? // JSON stored as string
+  status     String  @default("PENDING") // PENDING, SUCCESS, FAILED
+}
+
+// Clinic data (could be seeded or fetched from external API)
+model Clinic {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  phone     String
+  latitude  Float
+  longitude Float
+  
+  // Operating hours (simplified)
+  openTime  String   // e.g., "08:00"
+  closeTime String   // e.g., "20:00"
+  
+  // Available appointment slots (JSON array as string)
+  availableSlots String @default("[]")
+  
+  // Specialties (JSON array as string)
+  specialties String @default("[]")
+  
+  // Rating
+  rating Float?
+  
+  conversations Conversation[]
+}
