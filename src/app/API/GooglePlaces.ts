@@ -137,7 +137,7 @@ export async function getNearbyClinicDetails(
 ) {
   try {
     // Step 1: Get nearby places
-    const nearbyData = await getNearbyPlaces(lat, lng, radius, "health");
+    const nearbyData = await getNearbyPlaces(lat, lng, radius, "health", "Clinic");
 
     if (!nearbyData.results || nearbyData.results.length === 0) {
       return [];
