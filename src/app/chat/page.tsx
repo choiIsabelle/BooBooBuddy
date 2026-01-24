@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Message {
   id: number;
@@ -142,12 +143,20 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
-          Sign Out
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/profile"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            Profile
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            Sign Out
+          </button>
+        </div>
       </header>
 
       {/* Messages Container */}
