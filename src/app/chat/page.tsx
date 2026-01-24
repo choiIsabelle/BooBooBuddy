@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import ConsentModal from "@/components/ConsentModal";
 
 interface Message {
   id: string;
@@ -52,8 +53,30 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
+  const [showConsentModal, setShowConsentModal] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // Check for existing consent on mount
+  useEffect(() => {
+    const consent = localStorage.getItem("booboobuddy_consent");
+    if (consent === "true") {
+      setHasConsented(true);
+      setShowConsentModal(false);
+    }
+  }, []);
+
+  const handleAcceptConsent = () => {
+    localStorage.setItem("booboobuddy_consent", "true");
+    localStorage.setItem("booboobuddy_consent_date", new Date().toISOString());
+    setHasConsented(true);
+    setShowConsentModal(false);
+  };
+
+  const handleDeclineConsent = () => {
+    router.push("/");
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,7 +88,7 @@ export default function ChatPage() {
 
   // Start a new conversation on mount
   const initConversation = useCallback(async () => {
-    if (isInitialized) return;
+    if (isInitialized || !hasConsented) return;
 
     try {
       setIsTyping(true);
@@ -105,11 +128,13 @@ export default function ChatPage() {
     } finally {
       setIsTyping(false);
     }
-  }, [isInitialized]);
+  }, [isInitialized, hasConsented]);
 
   useEffect(() => {
-    initConversation();
-  }, [initConversation]);
+    if (hasConsented) {
+      initConversation();
+    }
+  }, [initConversation, hasConsented]);
 
   const sendMessageToApi = async (userMessage: string): Promise<{
     message: ApiMessage;
@@ -223,26 +248,35 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-950 dark:to-cyan-900">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-teal-200 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-teal-800 dark:bg-zinc-900/80">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900">
-            <span className="text-xl">🩹</span>
+    <>
+      {/* Informed Consent Modal */}
+      {showConsentModal && (
+        <ConsentModal
+          onAccept={handleAcceptConsent}
+          onDecline={handleDeclineConsent}
+        />
+      )}
+
+      <div className="flex h-screen flex-col bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-950 dark:to-cyan-900">
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-teal-200 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-teal-800 dark:bg-zinc-900/80">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900">
+              <span className="text-xl">🩹</span>
+            </div>
+            <div>
+              <h1 className="font-bold text-teal-700 dark:text-teal-400">
+                BooBoo Buddy
+              </h1>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Your Health Assistant
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-teal-700 dark:text-teal-400">
-              BooBoo Buddy
-            </h1>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Your Health Assistant
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-        >
+          <button
+            onClick={handleLogout}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
           Sign Out
         </button>
       </header>
@@ -377,5 +411,6 @@ export default function ChatPage() {
         </p>
       </div>
     </div>
+    </>
   );
 }
