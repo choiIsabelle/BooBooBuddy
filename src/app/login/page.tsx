@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // Pre-generated falling items to avoid Math.random() during render
@@ -207,19 +207,96 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Test the clinic API on page load
+  useEffect(() => {
+    const testClinicAPI = async () => {
+      try {
+        console.log("🔍 Testing clinic API on login page load...");
+        const response = await fetch("/api/test-clinics");
+        const text = await response.text();
+        console.log("✅ Clinic API Response:", text);
+      } catch (error) {
+        console.error("❌ Error testing clinic API:", error);
+      }
+    };
+
+    testClinicAPI();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle authentication logic here
-    if (isLogin) {
-      console.log("Logging in:", { email, password });
-      // Redirect to chat after successful login
-      router.push("/chat");
-    } else {
-      console.log("Signing up:", { name, email, password, confirmPassword });
-      // After signup, redirect to chat as well
-      router.push("/chat");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      if (isLogin) {
+        // Login flow
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError(data.error || "Failed to login");
+          setIsLoading(false);
+          return;
+        }
+
+        // Store user info in localStorage (simple auth - use proper auth in production)
+        localStorage.setItem("booboobuddy_user", JSON.stringify(data.user));
+        localStorage.setItem("booboobuddy_userId", data.user.id);
+
+        // Check if user is onboarded
+        if (data.user.isOnboarded) {
+          router.push("/chat");
+        } else {
+          router.push(
+            `/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`,
+          );
+        }
+      } else {
+        // Signup flow
+        if (password !== confirmPassword) {
+          setError("Passwords do not match");
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, name }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError(data.error || "Failed to create account");
+          setIsLoading(false);
+          return;
+        }
+
+        // Store user info
+        localStorage.setItem("booboobuddy_user", JSON.stringify(data.user));
+        localStorage.setItem("booboobuddy_userId", data.user.id);
+
+        // Redirect to onboarding
+        router.push(
+          `/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`,
+        );
+      }
+    } catch (error) {
+      console.error("Auth error:", error);
+      setError("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -270,6 +347,13 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Error Message */}
+          {error && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
           {!isLogin && (
             <div>
               <label
@@ -366,9 +450,14 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="mt-6 w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition-colors hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+            disabled={isLoading}
+            className="mt-6 w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition-colors hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-zinc-900"
           >
-            {isLogin ? "Sign In" : "Create Account"}
+            {isLoading
+              ? "Please wait..."
+              : isLogin
+                ? "Sign In"
+                : "Create Account"}
           </button>
         </form>
 

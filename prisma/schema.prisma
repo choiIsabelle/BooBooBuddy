@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// User account
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  email     String   @unique
+  name      String?
+  password  String   // In productkion, use proper hashing
+  
+  // Onboarding status
+  isOnboarded       Boolean  @default(false)
+  onboardedAt       DateTime?
+  
+  // Profile information (collected during onboarding)
+  allergies         String?  // JSON array stored as string
+  medicalConditions String?  // JSON array stored as string
+  preferredClinic   String?
+  location          String?  // User's default location (zip code or city)
+  
+  // User's conversations
+  conversations UserConversation[]
+}
+
+// Link table between User and Conversation
+model UserConversation {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, conversationId])
+}
+
+// Conversation session
+model Conversation {
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Current workflow state (stored as string for SQLite compatibility)
+  state     String @default("GREETING")
+  
+  // Collected information
+  userName        String?
+  healthConcern   String?
+  symptoms        String   @default("[]") // JSON array stored as string
+  symptomSeverity String?   // mild, moderate, severe
+  duration        String?
+  location        String?   // for clinic search
+  
+  // Selected clinic/appointment
+  selectedClinicId String?
+  selectedClinic   Clinic?   @relation(fields: [selectedClinicId], references: [id])
+  appointmentTime  DateTime?
+  
+  messages         Message[]
+  toolCalls        ToolCall[]
+  userConversations UserConversation[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  role    String  // USER, ASSISTANT, SYSTEM, TOOL
+  content String
+  
+  // For assistant messages, store the raw LLM response
+  rawLlmResponse String? // JSON stored as string
+}
+
+model ToolCall {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  toolName   String
+  toolInput  String  // JSON stored as string
+  toolOutput String? // JSON stored as string
+  status     String  @default("PENDING") // PENDING, SUCCESS, FAILED
+}
+
+// Clinic data (could be seeded or fetched from external API)
+model Clinic {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  phone     String
+  latitude  Float
+  longitude Float
+  
+  // Operating hours (simplified)
+  openTime  String   // e.g., "08:00"
+  closeTime String   // e.g., "20:00"
+  
+  // Available appointment slots (JSON array as string)
+  availableSlots String @default("[]")
+  
+  // Specialties (JSON array as string)
+  specialties String @default("[]")
+  
+  // Rating
+  rating Float?
+  
+  conversations Conversation[]
+}
