@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // Pre-generated falling items to avoid Math.random() during render
@@ -208,6 +208,22 @@ export default function LoginPage() {
   const [name, setName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const router = useRouter();
+
+  // Test the clinic API on page load
+  useEffect(() => {
+    const testClinicAPI = async () => {
+      try {
+        console.log("🔍 Testing clinic API on login page load...");
+        const response = await fetch("/api/test-clinics");
+        const text = await response.text();
+        console.log("✅ Clinic API Response:", text);
+      } catch (error) {
+        console.error("❌ Error testing clinic API:", error);
+      }
+    };
+
+    testClinicAPI();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
