@@ -1,7 +1,7 @@
-import { getNearbyClinicDetails } from "@/src/app/API/GooglePlaces";
+import { getNearbyClinicDetails } from "../GooglePlaces";
 
 /**
- * Test API route - Logs results to terminal
+ * Test API route - Returns clinic data as JSON
  * Usage: GET /api/test-clinics?lat=40.7128&lng=-74.0060
  */
 export async function GET(request: Request) {
@@ -14,8 +14,10 @@ export async function GET(request: Request) {
 
     // Validate coordinates
     if (isNaN(lat) || isNaN(lng)) {
-      console.log("❌ Invalid latitude or longitude");
-      return new Response("Invalid coordinates", { status: 400 });
+      return new Response(
+        JSON.stringify({ error: "Invalid latitude or longitude" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     console.log(
@@ -34,11 +36,23 @@ export async function GET(request: Request) {
         JSON.stringify(clinics, null, 2)
     );
 
-    return new Response("Check your terminal for results!", { status: 200 });
+    return new Response(JSON.stringify({ success: true, data: clinics }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error occurred";
     console.error("\n❌ Error:", errorMessage, "\n");
-    return new Response(`Error: ${errorMessage}`, { status: 500 });
+    return new Response(
+      JSON.stringify({
+        error: errorMessage,
+        tips: [
+          "Make sure NEXT_PUBLIC_GOOGLE_PLACES_API_KEY is set in .env.local",
+          "Make sure your API key has the Places API enabled",
+        ],
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 }
