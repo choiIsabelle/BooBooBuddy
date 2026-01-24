@@ -1,3 +1,37 @@
+# BooBooBuddy
+Submission for Dialogue's challenge at Concordia's 2026 Hackathon. BooBooBuddy addresses the need for agentic healthcare beyond a chatbot; BooBooBuddy consider's the user's comprehensive health background and goals to suggest immediate care aligning with the user's preferences. BooBooBuddy utilizes past health data and the nature of the user's current conversation to determine the proper protocol: call immediate care for the user from a local healthcare clinic, or continue advising.
+
+## High-level architecture
+```
+
+┌─────────────┐
+│   Frontend  │  Next.js (React + TS + Tailwind)
+│             │
+│  Chat UI    │◄───────────────┐
+│  Voice UI   │                │
+└─────▲───────┘                │
+      │ JSON (strict schemas)  │
+      ▼                        │
+┌─────────────┐                │
+│   Backend   │  Next.js API routes / Edge functions
+│             │
+│  LLM Orchestration ──┐       │
+│  Clinic Search       │       │
+│  Telephony Control   │       │
+│  User/Auth/Profile   │       │
+└─────▲─────────────── ┘       │
+      │                        │
+      ▼                        │
+┌─────────────┐                │
+│ PostgreSQL  │◄───────────────┘
+│ (User,      │
+│  Health,    │
+│  Sessions)  │
+└─────────────┘
+
+
+```
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
