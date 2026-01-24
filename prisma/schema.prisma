@@ -10,6 +10,42 @@ datasource db {
   url      = "file:./dev.db"
 }
 
+// User account
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  email     String   @unique
+  name      String?
+  password  String   // In production, use proper hashing
+  
+  // Onboarding status
+  isOnboarded       Boolean  @default(false)
+  onboardedAt       DateTime?
+  
+  // Profile information (collected during onboarding)
+  childName         String?
+  childAge          Int?
+  childAllergies    String?  // JSON array stored as string
+  medicalConditions String?  // JSON array stored as string
+  preferredClinic   String?
+  
+  // User's conversations
+  conversations UserConversation[]
+}
+
+// Link table between User and Conversation
+model UserConversation {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, conversationId])
+}
+
 // Conversation session
 model Conversation {
   id        String    @id @default(cuid())
@@ -32,8 +68,9 @@ model Conversation {
   selectedClinic   Clinic?   @relation(fields: [selectedClinicId], references: [id])
   appointmentTime  DateTime?
   
-  messages  Message[]
-  toolCalls ToolCall[]
+  messages         Message[]
+  toolCalls        ToolCall[]
+  userConversations UserConversation[]
 }
 
 model Message {

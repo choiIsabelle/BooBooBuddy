@@ -132,12 +132,12 @@ export async function getPlaceDetails(
 export async function getNearbyClinicDetails(
   lat: number,
   lng: number,
-  limit: number = 3,
+  limit: number = 5,
   radius: number = 5000
 ) {
   try {
     // Step 1: Get nearby places
-    const nearbyData = await getNearbyPlaces(lat, lng, radius, "health");
+    const nearbyData = await getNearbyPlaces(lat, lng, radius, "health", "Clinic");
 
     if (!nearbyData.results || nearbyData.results.length === 0) {
       return [];
