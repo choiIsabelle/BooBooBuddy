@@ -251,12 +251,15 @@ export default function LoginPage() {
 
         // Store user info in localStorage (simple auth - use proper auth in production)
         localStorage.setItem("booboobuddy_user", JSON.stringify(data.user));
+        localStorage.setItem("booboobuddy_userId", data.user.id);
 
         // Check if user is onboarded
         if (data.user.isOnboarded) {
           router.push("/chat");
         } else {
-          router.push(`/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`);
+          router.push(
+            `/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`,
+          );
         }
       } else {
         // Signup flow
@@ -282,9 +285,12 @@ export default function LoginPage() {
 
         // Store user info
         localStorage.setItem("booboobuddy_user", JSON.stringify(data.user));
+        localStorage.setItem("booboobuddy_userId", data.user.id);
 
         // Redirect to onboarding
-        router.push(`/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`);
+        router.push(
+          `/post-signup?userId=${data.user.id}&email=${encodeURIComponent(email)}`,
+        );
       }
     } catch (error) {
       console.error("Auth error:", error);
@@ -447,7 +453,11 @@ export default function LoginPage() {
             disabled={isLoading}
             className="mt-6 w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition-colors hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed dark:focus:ring-offset-zinc-900"
           >
-            {isLoading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
+            {isLoading
+              ? "Please wait..."
+              : isLogin
+                ? "Sign In"
+                : "Create Account"}
           </button>
         </form>
 

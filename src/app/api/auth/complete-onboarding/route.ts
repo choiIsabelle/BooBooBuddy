@@ -5,12 +5,18 @@ import { prisma } from "@/lib/db";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, childName, childAge, childAllergies, medicalConditions, preferredClinic } = body;
+    const {
+      userId,
+      childAllergies,
+      medicalConditions,
+      preferredClinic,
+      location,
+    } = body;
 
     if (!userId) {
       return NextResponse.json(
         { error: "User ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -20,11 +26,12 @@ export async function POST(request: NextRequest) {
       data: {
         isOnboarded: true,
         onboardedAt: new Date(),
-        childName: childName || null,
-        childAge: childAge ? parseInt(childAge) : null,
-        childAllergies: childAllergies ? JSON.stringify(childAllergies) : null,
-        medicalConditions: medicalConditions ? JSON.stringify(medicalConditions) : null,
+        allergies: childAllergies ? JSON.stringify(childAllergies) : null,
+        medicalConditions: medicalConditions
+          ? JSON.stringify(medicalConditions)
+          : null,
         preferredClinic: preferredClinic || null,
+        location: location || null,
       },
     });
 
@@ -35,13 +42,14 @@ export async function POST(request: NextRequest) {
         email: user.email,
         name: user.name,
         isOnboarded: user.isOnboarded,
+        location: user.location,
       },
     });
   } catch (error) {
     console.error("Error completing onboarding:", error);
     return NextResponse.json(
       { error: "Failed to complete onboarding" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

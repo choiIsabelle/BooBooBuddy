@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ConsentModal from "@/components/ConsentModal";
-import ClinicCard from "@/components/ClinicCard";
+import ClinicCarousel from "@/components/ClinicCarousel";
 
 interface Message {
   id: string;
@@ -60,18 +60,56 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [isSearchingClinics, setIsSearchingClinics] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Check for existing consent on mount
+  // Request browser geolocation on mount
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log("📍 Got browser location:", latitude, longitude);
+          setUserLocation({ lat: latitude, lng: longitude });
+          // Store in localStorage for persistence
+          localStorage.setItem(
+            "booboobuddy_geolocation",
+            JSON.stringify({ lat: latitude, lng: longitude }),
+          );
+        },
+        (error) => {
+          console.log("📍 Geolocation error:", error.message);
+          // Try to load from localStorage if available
+          const stored = localStorage.getItem("booboobuddy_geolocation");
+          if (stored) {
+            setUserLocation(JSON.parse(stored));
+          }
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }, // Cache for 10 minutes
+      );
+    }
+  }, []);
+
+  // Check for existing consent and user session on mount
   useEffect(() => {
     const consent = localStorage.getItem("booboobuddy_consent");
     if (consent === "true") {
       setHasConsented(true);
       setShowConsentModal(false);
+    }
+
+    // Get userId from session storage (set during login)
+    const storedUserId = localStorage.getItem("booboobuddy_userId");
+    if (storedUserId) {
+      setUserId(storedUserId);
     }
   }, []);
 
@@ -150,12 +188,19 @@ export default function ChatPage() {
     message: ApiMessage;
     toolResults?: ToolResult[];
   }> => {
+    console.log("📤 Sending message to API:");
+    console.log("   conversationId:", conversationId);
+    console.log("   userLocation:", userLocation);
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         conversationId,
+        userId: userId || undefined, // Include userId if available for profile location lookup
         message: userMessage,
+        // Include browser geolocation if available
+        geolocation: userLocation || undefined,
       }),
     });
 
@@ -212,7 +257,8 @@ export default function ChatPage() {
     if (!messageText || isTyping) return;
 
     // Check if this might trigger a clinic search
-    const mightSearchClinics = /clinic|doctor|nearby|find|search|location|zip/i.test(messageText);
+    const mightSearchClinics =
+      /clinic|doctor|nearby|find|search|location|zip/i.test(messageText);
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -224,7 +270,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsTyping(true);
-    
+
     if (mightSearchClinics) {
       setIsSearchingClinics(true);
     }
@@ -383,19 +429,11 @@ export default function ChatPage() {
                 {message.sender === "bot" &&
                   message.clinics &&
                   message.clinics.length > 0 && (
-                    <div className="mt-3 w-full max-w-[90%] space-y-3">
-                      <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                        📍 Nearby Clinics Found:
-                      </p>
-                      {message.clinics.map((clinic) => (
-                        <ClinicCard
-                          key={clinic.id}
-                          clinic={clinic}
-                          onSchedule={handleScheduleClinic}
-                          onCall={handleCallClinic}
-                        />
-                      ))}
-                    </div>
+                    <ClinicCarousel
+                      clinics={message.clinics}
+                      onSchedule={handleScheduleClinic}
+                      onCall={handleCallClinic}
+                    />
                   )}
               </div>
             ))}
@@ -446,9 +484,25 @@ export default function ChatPage() {
                       </p>
                     </div>
                     <div className="ml-2">
-                      <svg className="animate-spin h-5 w-5 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <svg
+                        className="animate-spin h-5 w-5 text-teal-500"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
                       </svg>
                     </div>
                   </div>
@@ -478,6 +532,24 @@ export default function ChatPage() {
 
         {/* Input Area */}
         <div className="border-t border-teal-200 bg-white p-4 dark:border-teal-800 dark:bg-zinc-900">
+          {/* Location status indicator */}
+          <div className="mx-auto max-w-3xl mb-2">
+            <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              {userLocation ? (
+                <>
+                  <span className="text-green-500">📍</span>
+                  <span>Location enabled</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-yellow-500">📍</span>
+                  <span>
+                    Location not available - you may be asked for your zip code
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
           <div className="mx-auto flex max-w-3xl items-end gap-3">
             <div className="relative flex-1">
               <textarea

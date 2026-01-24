@@ -28,6 +28,7 @@ model User {
   allergies         String?  // JSON array stored as string
   medicalConditions String?  // JSON array stored as string
   preferredClinic   String?
+  location          String?  // User's default location (zip code or city)
   
   // User's conversations
   conversations UserConversation[]

@@ -1,17 +1,24 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // API Request/Response schemas
 
 export const SendMessageRequestSchema = z.object({
   conversationId: z.string().optional(), // If not provided, creates new conversation
+  userId: z.string().optional(), // Optional user ID to fetch profile location
   message: z.string().min(1).max(5000),
+  geolocation: z
+    .object({
+      lat: z.number(),
+      lng: z.number(),
+    })
+    .optional(), // Browser geolocation if available
 });
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 
 export const MessageSchema = z.object({
   id: z.string(),
-  role: z.enum(['USER', 'ASSISTANT', 'SYSTEM', 'TOOL']),
+  role: z.enum(["USER", "ASSISTANT", "SYSTEM", "TOOL"]),
   content: z.string(),
   createdAt: z.string(), // ISO datetime
 });
@@ -29,10 +36,14 @@ export const SendMessageResponseSchema = z.object({
   conversationId: z.string(),
   message: MessageSchema,
   state: z.string(),
-  toolResults: z.array(z.object({
-    toolName: z.string(),
-    result: z.unknown(),
-  })).optional(),
+  toolResults: z
+    .array(
+      z.object({
+        toolName: z.string(),
+        result: z.unknown(),
+      }),
+    )
+    .optional(),
 });
 
 export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;

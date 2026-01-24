@@ -17,22 +17,21 @@ export default function PostSignupPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [step, setStep] = useState(1);
-  
+
   // Form state
-  const [childName, setChildName] = useState("");
-  const [childAge, setChildAge] = useState("");
   const [allergies, setAllergies] = useState<string[]>([]);
   const [allergyInput, setAllergyInput] = useState("");
   const [conditions, setConditions] = useState<string[]>([]);
   const [conditionInput, setConditionInput] = useState("");
   const [preferredClinic, setPreferredClinic] = useState("");
+  const [location, setLocation] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const checkUser = async () => {
       const userId = searchParams.get("userId");
       const email = searchParams.get("email");
-      
+
       if (!userId && !email) {
         // No user info, redirect to login
         router.push("/login");
@@ -41,15 +40,17 @@ export default function PostSignupPage() {
 
       try {
         if (email) {
-          const response = await fetch(`/api/auth/check-user?email=${encodeURIComponent(email)}`);
+          const response = await fetch(
+            `/api/auth/check-user?email=${encodeURIComponent(email)}`,
+          );
           const data = await response.json();
-          
+
           if (data.exists && data.isOnboarded) {
             // User is already onboarded, go directly to chat
             router.push("/chat");
             return;
           }
-          
+
           if (data.exists) {
             setUserData(data.user);
           }
@@ -96,11 +97,10 @@ export default function PostSignupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: userData.id,
-          childName,
-          childAge: childAge ? parseInt(childAge) : null,
           childAllergies: allergies,
           medicalConditions: conditions,
           preferredClinic,
+          location,
         }),
       });
 
@@ -157,45 +157,31 @@ export default function PostSignupPage() {
             <div
               key={s}
               className={`h-2 w-16 rounded-full ${
-                s <= step
-                  ? "bg-teal-500"
-                  : "bg-zinc-200 dark:bg-zinc-700"
+                s <= step ? "bg-teal-500" : "bg-zinc-200 dark:bg-zinc-700"
               }`}
             />
           ))}
         </div>
 
-        {/* Step 1: Child Information */}
+        {/* Step 1: Location Information */}
         {step === 1 && (
           <div className="space-y-6">
             <h2 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200">
-              Tell us about your child
+              Your Location
             </h2>
-            
-            <div>
-              <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Child&apos;s Name
-              </label>
-              <input
-                type="text"
-                value={childName}
-                onChange={(e) => setChildName(e.target.value)}
-                placeholder="Enter your child's name"
-                className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-              />
-            </div>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              This helps us find clinics near you when you need care.
+            </p>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Child&apos;s Age
+                Zip Code or City
               </label>
               <input
-                type="number"
-                min="0"
-                max="18"
-                value={childAge}
-                onChange={(e) => setChildAge(e.target.value)}
-                placeholder="Enter age"
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g., 98101 or Seattle, WA"
                 className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
             </div>
@@ -336,7 +322,8 @@ export default function PostSignupPage() {
                 className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
               <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                We&apos;ll prioritize this clinic when searching for available appointments.
+                We&apos;ll prioritize this clinic when searching for available
+                appointments.
               </p>
             </div>
 
@@ -346,13 +333,22 @@ export default function PostSignupPage() {
                 Profile Summary
               </h3>
               <div className="space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-                {childName && <p>👶 Child: {childName}{childAge ? `, ${childAge} years old` : ""}</p>}
-                {allergies.length > 0 && <p>⚠️ Allergies: {allergies.join(", ")}</p>}
-                {conditions.length > 0 && <p>🏥 Conditions: {conditions.join(", ")}</p>}
-                {preferredClinic && <p>📍 Preferred: {preferredClinic}</p>}
-                {!childName && !allergies.length && !conditions.length && !preferredClinic && (
-                  <p className="italic">No information added yet.</p>
+                {location && <p>� Location: {location}</p>}
+                {allergies.length > 0 && (
+                  <p>⚠️ Allergies: {allergies.join(", ")}</p>
                 )}
+                {conditions.length > 0 && (
+                  <p>🏥 Conditions: {conditions.join(", ")}</p>
+                )}
+                {preferredClinic && (
+                  <p>🏨 Preferred Clinic: {preferredClinic}</p>
+                )}
+                {!location &&
+                  !allergies.length &&
+                  !conditions.length &&
+                  !preferredClinic && (
+                    <p className="italic">No information added yet.</p>
+                  )}
               </div>
             </div>
 

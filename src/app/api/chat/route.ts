@@ -43,28 +43,83 @@ function extractLocationFromMessage(message: string): string | null {
     return zipMatch[0];
   }
 
-  // Check for common location phrases
+  // Check for Canadian postal code (e.g., H2X 1Y4)
+  const canadianPostalMatch = message.match(/\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i);
+  if (canadianPostalMatch) {
+    return canadianPostalMatch[0].toUpperCase();
+  }
+
+  // Check for explicit location phrases like "in Montreal" or "near Seattle, WA"
   const locationPatterns = [
-    /(?:in|near|around|at)\s+([A-Z][a-zA-Z\s]+(?:,\s*[A-Z]{2})?)/i,
-    /([A-Z][a-zA-Z]+(?:,\s*[A-Z]{2})?)(?:\s+area|\s+zip|\s+city)?/i,
+    /(?:in|near|around|at|from)\s+([A-Z][a-zA-Z\s]+(?:,\s*[A-Z]{2})?)/i,
+  ];
+
+  // Excluded common words that aren't locations
+  const excluded = [
+    "find",
+    "search",
+    "clinic",
+    "doctor",
+    "help",
+    "need",
+    "want",
+    "nearby",
+    "the",
+    "hello",
+    "hi",
+    "hey",
+    "thanks",
+    "thank",
+    "you",
+    "please",
+    "yes",
+    "no",
+    "okay",
+    "ok",
+    "sure",
+    "great",
+    "good",
+    "bad",
+    "pain",
+    "hurt",
+    "ache",
+    "sick",
+    "ill",
+    "fever",
+    "cold",
+    "headache",
+    "stomach",
+    "back",
+    "chest",
+    "throat",
+    "ear",
+    "eye",
+    "today",
+    "yesterday",
+    "tomorrow",
+    "now",
+    "soon",
+    "later",
+    "morning",
+    "afternoon",
+    "evening",
+    "night",
+    "week",
+    "month",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
   ];
 
   for (const pattern of locationPatterns) {
     const match = message.match(pattern);
     if (match && match[1] && match[1].length > 2) {
-      // Exclude common words that aren't locations
-      const excluded = [
-        "find",
-        "search",
-        "clinic",
-        "doctor",
-        "help",
-        "need",
-        "want",
-        "nearby",
-        "the",
-      ];
-      if (!excluded.includes(match[1].toLowerCase().trim())) {
+      const potentialLocation = match[1].toLowerCase().trim();
+      if (!excluded.includes(potentialLocation)) {
         return match[1].trim();
       }
     }
@@ -77,6 +132,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    console.log("📥 Received request body:");
+    console.log("   geolocation:", body.geolocation || "(not provided)");
+
     // Validate request
     const parsed = SendMessageRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -86,7 +144,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { conversationId, message } = parsed.data;
+    const { conversationId, userId, message, geolocation } = parsed.data;
+
+    // Browser geolocation as coordinates string (highest priority)
+    const browserLocation = geolocation
+      ? `${geolocation.lat},${geolocation.lng}`
+      : null;
+    if (browserLocation) {
+      console.log(`🌐 Browser geolocation: ${browserLocation}`);
+    }
+
+    // Fetch user's profile location if userId is provided
+    let userProfileLocation: string | null = null;
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { location: true },
+      });
+      userProfileLocation = user?.location || null;
+      console.log(
+        `👤 User profile location: ${userProfileLocation || "not set"}`,
+      );
+    }
 
     // Get or create conversation
     let conversation;
@@ -131,6 +210,170 @@ export async function POST(request: NextRequest) {
     // Build context for LLM
     const { context } = await buildConversationContext(conversation.id);
 
+    // Early location detection from message
+    const earlyLocationFromMessage = extractLocationFromMessage(message);
+
+    // Priority: browser geolocation > message > conversation > user profile
+    const earlyEffectiveLocation =
+      browserLocation ||
+      earlyLocationFromMessage ||
+      context.location ||
+      userProfileLocation;
+
+    // Check if user is asking for clinic search
+    const earlyClinicSearchRequest =
+      /clinic|doctor|nearby|find.*care|urgent\s*care|appointment|see\s*(a\s*)?doctor/i.test(
+        message,
+      );
+
+    console.log("🔍 Early detection:");
+    console.log("   Current state:", context.currentState);
+    console.log("   User asking for clinic:", earlyClinicSearchRequest);
+    console.log("   Browser geolocation:", browserLocation || "(none)");
+    console.log(
+      "   Location from message:",
+      earlyLocationFromMessage || "(none)",
+    );
+    console.log("   Effective location:", earlyEffectiveLocation || "(none)");
+
+    // EARLY INTERCEPT: If user asks for clinic AND we have geolocation, search immediately!
+    if (earlyClinicSearchRequest && browserLocation) {
+      console.log(
+        "🚀 Early intercept: Using browser geolocation for clinic search",
+      );
+
+      // Execute clinic search with browser coordinates
+      const toolResult = await executeTool(
+        { tool: "clinic_search", params: { location: browserLocation } },
+        conversation.id,
+      );
+
+      // Update state
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { state: "PRESENTING_OPTIONS" },
+      });
+
+      const responseMsg = toolResult.success
+        ? "I found some clinics near your location. Here are your options:"
+        : "I had trouble finding clinics. Please try again.";
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: "ASSISTANT",
+          content: responseMsg,
+        },
+      });
+
+      return NextResponse.json({
+        conversationId: conversation.id,
+        message: {
+          id: assistantMessage.id,
+          role: assistantMessage.role,
+          content: assistantMessage.content,
+          createdAt: assistantMessage.createdAt.toISOString(),
+        },
+        state: "PRESENTING_OPTIONS",
+        toolResults: toolResult.success
+          ? [{ toolName: "clinic_search", result: toolResult.data }]
+          : undefined,
+      });
+    }
+
+    // EARLY INTERCEPT: If we're in SEARCHING_CLINICS and user just gave location, search immediately
+    if (
+      context.currentState === "SEARCHING_CLINICS" &&
+      earlyLocationFromMessage
+    ) {
+      console.log(
+        "🚀 Early intercept: User provided location while in SEARCHING_CLINICS state",
+      );
+
+      // Save location
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { location: earlyLocationFromMessage },
+      });
+
+      // Execute clinic search
+      const toolResult = await executeTool(
+        {
+          tool: "clinic_search",
+          params: { location: earlyLocationFromMessage },
+        },
+        conversation.id,
+      );
+
+      // Save assistant message
+      const responseMsg = toolResult.success
+        ? `I found some clinics near ${earlyLocationFromMessage} for you. Here are your options:`
+        : "I had trouble finding clinics. Please try again.";
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: "ASSISTANT",
+          content: responseMsg,
+        },
+      });
+
+      // Update state to PRESENTING_OPTIONS
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { state: "PRESENTING_OPTIONS" },
+      });
+
+      return NextResponse.json({
+        conversationId: conversation.id,
+        message: {
+          id: assistantMessage.id,
+          role: assistantMessage.role,
+          content: assistantMessage.content,
+          createdAt: assistantMessage.createdAt.toISOString(),
+        },
+        state: "PRESENTING_OPTIONS",
+        toolResults: toolResult.success
+          ? [{ toolName: "clinic_search", result: toolResult.data }]
+          : undefined,
+      });
+    }
+
+    // EARLY INTERCEPT: If user asks for clinic but no location, ask for it
+    if (earlyClinicSearchRequest && !earlyEffectiveLocation) {
+      console.log(
+        "📍 Early intercept: User wants clinic but no location - prompting",
+      );
+
+      // Update state to SEARCHING_CLINICS
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { state: "SEARCHING_CLINICS" },
+      });
+
+      const responseMsg =
+        "I'd be happy to help you find a nearby clinic! What's your zip code or city so I can search for clinics in your area?";
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          role: "ASSISTANT",
+          content: responseMsg,
+        },
+      });
+
+      return NextResponse.json({
+        conversationId: conversation.id,
+        message: {
+          id: assistantMessage.id,
+          role: assistantMessage.role,
+          content: assistantMessage.content,
+          createdAt: assistantMessage.createdAt.toISOString(),
+        },
+        state: "SEARCHING_CLINICS",
+      });
+    }
+
     // Prepare messages for LLM
     const llmMessages = [
       ...conversation.messages
@@ -161,11 +404,28 @@ export async function POST(request: NextRequest) {
 
     // Check for location in the user message (zip code, city name)
     const locationFromMessage = extractLocationFromMessage(message);
-    const effectiveLocation = locationFromMessage || context.location;
+
+    // Priority for location: message > conversation > user profile
+    const effectiveLocation =
+      locationFromMessage || context.location || userProfileLocation;
+
+    console.log("📍 Location resolution:");
+    console.log("   From message:", locationFromMessage || "(none)");
+    console.log("   From conversation:", context.location || "(none)");
+    console.log("   From user profile:", userProfileLocation || "(none)");
+    console.log("   Effective location:", effectiveLocation || "(none)");
 
     // Check if user is asking for clinic search (regardless of current state)
     const isClinicSearchRequest =
-      /clinic|doctor|nearby|find.*care|urgent\s*care/i.test(message);
+      /clinic|doctor|nearby|find.*care|urgent\s*care|appointment|see\s*(a\s*)?doctor/i.test(
+        message,
+      );
+
+    // Check if LLM response indicates clinic search intent
+    const llmWantsClinicSearch =
+      /clinic|find.*care|search.*nearby|location|zip\s*code/i.test(
+        workflowResult.responseMessage,
+      );
 
     // Save location to conversation if newly detected
     if (locationFromMessage && !context.location) {
@@ -177,11 +437,59 @@ export async function POST(request: NextRequest) {
 
     // Execute tool if needed
     let toolResults;
+    let needsLocationPrompt = false;
+
+    // Check if we need to ask for location
+    const wantsToSearchClinics =
+      workflowResult.newState === "SEARCHING_CLINICS" ||
+      isClinicSearchRequest ||
+      llmWantsClinicSearch ||
+      (workflowResult.shouldExecuteTool &&
+        workflowResult.toolToExecute?.tool === "clinic_search");
+
+    console.log("🔍 Clinic search detection:");
+    console.log(
+      "   State is SEARCHING_CLINICS:",
+      workflowResult.newState === "SEARCHING_CLINICS",
+    );
+    console.log(
+      "   User message matches clinic pattern:",
+      isClinicSearchRequest,
+    );
+    console.log(
+      "   LLM response mentions clinic/location:",
+      llmWantsClinicSearch,
+    );
+    console.log(
+      "   LLM called clinic_search tool:",
+      workflowResult.shouldExecuteTool &&
+        workflowResult.toolToExecute?.tool === "clinic_search",
+    );
+    console.log("   wantsToSearchClinics:", wantsToSearchClinics);
+    console.log("   effectiveLocation:", effectiveLocation || "(none)");
+
+    if (wantsToSearchClinics && !effectiveLocation) {
+      // No location available - ask the user
+      needsLocationPrompt = true;
+      console.log("📍 No location available, will prompt user");
+
+      // Update state to SEARCHING_CLINICS so we continue the flow
+      workflowResult.newState = "SEARCHING_CLINICS" as ConversationState;
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { state: "SEARCHING_CLINICS" },
+      });
+
+      // Override response to ask for location
+      workflowResult.responseMessage =
+        "I'd be happy to help you find a nearby clinic! What's your zip code or city so I can search for clinics in your area?";
+    }
 
     // PROACTIVE CLINIC SEARCH: Auto-trigger when:
     // 1. Entering SEARCHING_CLINICS state with location, OR
     // 2. User explicitly asks for clinic with location (bypass state machine)
     const shouldAutoSearch =
+      !needsLocationPrompt &&
       (workflowResult.newState === "SEARCHING_CLINICS" ||
         (isClinicSearchRequest && effectiveLocation)) &&
       effectiveLocation &&
