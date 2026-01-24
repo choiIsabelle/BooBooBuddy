@@ -15,7 +15,7 @@ export async function getNearbyPlaces(
   lng: number,
   radius: number = 5000,
   type?: string,
-  keyword?: string
+  keyword?: string,
 ) {
   try {
     const params = new URLSearchParams({
@@ -39,7 +39,7 @@ export async function getNearbyPlaces(
         headers: {
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -59,17 +59,13 @@ export async function getNearbyPlaces(
   }
 }
 
-
 /**
  * Place Details API - Get detailed information about a specific place
  * @param placeId - The unique identifier for the place
  * @param fields - Specific fields to retrieve (optional)
  * @returns Detailed place information or error
  */
-export async function getPlaceDetails(
-  placeId: string,
-  fields?: string[]
-) {
+export async function getPlaceDetails(placeId: string, fields?: string[]) {
   try {
     const params = new URLSearchParams({
       place_id: placeId,
@@ -91,7 +87,8 @@ export async function getPlaceDetails(
       "types",
     ];
 
-    const fieldsToRequest = fields && fields.length > 0 ? fields : defaultFields;
+    const fieldsToRequest =
+      fields && fields.length > 0 ? fields : defaultFields;
     params.append("fields", fieldsToRequest.join(","));
 
     const response = await fetch(
@@ -101,7 +98,7 @@ export async function getPlaceDetails(
         headers: {
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     if (!response.ok) {
@@ -133,11 +130,17 @@ export async function getNearbyClinicDetails(
   lat: number,
   lng: number,
   limit: number = 5,
-  radius: number = 5000
+  radius: number = 5000,
 ) {
   try {
     // Step 1: Get nearby places
-    const nearbyData = await getNearbyPlaces(lat, lng, radius, "health", "Clinic");
+    const nearbyData = await getNearbyPlaces(
+      lat,
+      lng,
+      radius,
+      "health",
+      "Clinic",
+    );
 
     if (!nearbyData.results || nearbyData.results.length === 0) {
       return [];
@@ -148,7 +151,7 @@ export async function getNearbyClinicDetails(
 
     // Step 3: Fetch detailed information for each place in parallel
     const detailsPromises = topPlaces.map((place: any) =>
-      getPlaceDetails(place.place_id)
+      getPlaceDetails(place.place_id),
     );
 
     const detailsResults = await Promise.all(detailsPromises);
@@ -161,19 +164,28 @@ export async function getNearbyClinicDetails(
         lat,
         lng,
         geometry?.lat,
-        geometry?.lng
+        geometry?.lng,
       );
 
       return {
         id: place.place_id,
+        placeId: place.place_id,
         name: details.name || place.name,
         phone: details.formatted_phone_number || null,
         address: details.formatted_address || place.vicinity,
         lat: geometry?.lat || 0,
         lng: geometry?.lng || 0,
+        distance: Math.round(distance * 0.621371 * 10) / 10, // Convert km to miles
         distanceKm: distance,
+        rating: details.rating || place.rating || null,
+        website: details.website || null,
         openNow: details.opening_hours?.open_now || null,
         hoursText: details.opening_hours?.weekday_text || [],
+        availableSlots: [], // Placeholder - would need scheduling system
+        specialties:
+          details.types?.filter(
+            (t: string) => t.includes("health") || t.includes("doctor"),
+          ) || [],
       };
     });
 
@@ -196,7 +208,7 @@ function calculateDistance(
   lat1: number,
   lng1: number,
   lat2: number,
-  lng2: number
+  lng2: number,
 ): number {
   const R = 6371; // Earth's radius in kilometers
   const dLat = ((lat2 - lat1) * Math.PI) / 180;

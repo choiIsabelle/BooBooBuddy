@@ -1,30 +1,48 @@
-import OpenAI from 'openai';
-import { LLMResponse, LLMResponseSchema, safeParseLLMResponse } from '../schemas/llm-response';
-import { getSystemPromptForState } from '../workflow/engine';
-import { ConversationState } from '../types';
+import OpenAI from "openai";
+import {
+  LLMResponse,
+  LLMResponseSchema,
+  safeParseLLMResponse,
+} from "../schemas/llm-response";
+import { getSystemPromptForState } from "../workflow/engine";
+import { ConversationState } from "../types";
 
 // Lazy initialization of OpenAI client - only create when needed
 let openaiClient: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not set');
+    // Check for OpenRouter API key first, then fall back to OpenAI
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+
+    if (!apiKey) {
+      throw new Error("OPENROUTER_API_KEY or OPENAI_API_KEY is not set");
     }
+
+    // If using OpenRouter, set the base URL
+    const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
+
+    console.log("🔑 Initializing LLM client...");
+    console.log("   Using OpenRouter:", isOpenRouter);
+    console.log("   API Key prefix:", apiKey.substring(0, 15) + "...");
+
     openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: apiKey,
+      baseURL: isOpenRouter ? "https://openrouter.ai/api/v1" : undefined,
     });
+
+    console.log("✅ LLM client initialized");
   }
   return openaiClient;
 }
 
 export interface LLMContext {
   state: ConversationState;
-  childName?: string | null;
-  childAge?: number | null;
+  userName?: string | null;
   symptoms: string[];
   symptomSeverity?: string | null;
   location?: string | null;
+  healthConcern?: string | null;
   selectedClinic?: {
     name: string;
     address: string;
@@ -37,139 +55,188 @@ export interface LLMContext {
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
 }
 
-// JSON schema for structured output
-const responseSchema = {
-  type: 'object' as const,
-  properties: {
-    message: {
-      type: 'string',
-      description: 'The response message to display to the user',
-    },
-    toolCall: {
-      type: 'object',
-      properties: {
-        tool: {
-          type: 'string',
-          enum: ['clinic_search', 'schedule_call', 'escalate'],
-        },
-        params: {
-          type: 'object',
-          additionalProperties: true,
-        },
-      },
-      required: ['tool', 'params'],
-    },
-    stateTransition: {
-      type: 'object',
-      properties: {
-        nextState: {
-          type: 'string',
-          enum: [
-            'GREETING',
-            'COLLECTING_CHILD_INFO',
-            'COLLECTING_SYMPTOMS',
-            'ASSESSING_SEVERITY',
-            'SEARCHING_CLINICS',
-            'PRESENTING_OPTIONS',
-            'SCHEDULING_CALL',
-            'CONFIRMING_APPOINTMENT',
-            'COMPLETED',
-            'ESCALATED',
-          ],
-        },
-        reason: { type: 'string' },
-      },
-      required: ['nextState'],
-    },
-    extractedInfo: {
-      type: 'object',
-      properties: {
-        childName: { type: 'string' },
-        childAge: { type: 'number' },
-        symptoms: { type: 'array', items: { type: 'string' } },
-        symptomSeverity: { type: 'string', enum: ['mild', 'moderate', 'severe'] },
-        duration: { type: 'string' },
-        location: { type: 'string' },
-        selectedClinicId: { type: 'string' },
-        appointmentTime: { type: 'string' },
-      },
-    },
-    reasoning: { type: 'string' },
-  },
-  required: ['message'],
-  additionalProperties: false,
-};
-
 export async function generateLLMResponse(
   messages: Message[],
-  context: LLMContext
+  context: LLMContext,
 ): Promise<LLMResponse> {
+  console.log("🤖 generateLLMResponse called");
+  console.log("   Messages count:", messages.length);
+  console.log("   Context state:", context.state);
+
   const systemPrompt = buildSystemPrompt(context);
-  
+
   const openai = getOpenAIClient();
-  
-  const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...messages.map((m) => ({
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.content,
-      })),
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'chat_response',
-        strict: true,
-        schema: responseSchema,
-      },
-    },
-    temperature: 0.7,
-    max_tokens: 1000,
-  });
-  
-  const responseText = completion.choices[0]?.message?.content;
-  
-  if (!responseText) {
-    throw new Error('No response from LLM');
+
+  const model = process.env.OPENAI_MODEL || "openai/gpt-4o-mini";
+  const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
+  console.log("   Model:", model);
+  console.log("   Using OpenRouter:", isOpenRouter);
+  console.log("🚀 Making API call to LLM...");
+
+  // Add JSON instruction to system prompt for OpenRouter compatibility
+  const jsonInstruction = `
+
+IMPORTANT: You must respond with valid JSON in this exact format:
+{
+  "message": "your response message to the user",
+  "reasoning": "brief explanation of your reasoning (optional)"
+}
+
+Only respond with the JSON object, no other text.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: model,
+      messages: [
+        { role: "system", content: systemPrompt + jsonInstruction },
+        ...messages.map((m) => ({
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+        })),
+      ],
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    console.log("✅ API response received!");
+    console.log("   Finish reason:", completion.choices[0]?.finish_reason);
+
+    const responseText = completion.choices[0]?.message?.content;
+    console.log("   Raw response:", responseText);
+
+    if (!responseText) {
+      throw new Error("No response from LLM");
+    }
+
+    // Try to extract JSON from the response (in case LLM includes extra text)
+    let jsonText = responseText.trim();
+
+    // If response starts with ```json or ```, extract the JSON content
+    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[1].trim();
+    }
+
+    // Try to find JSON object in the response
+    const jsonObjectMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (jsonObjectMatch) {
+      jsonText = jsonObjectMatch[0];
+    }
+
+    // Parse and validate the response
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error("❌ Failed to parse JSON:", parseError);
+      console.error("   Response text:", responseText);
+      // Return the raw response as the message
+      return {
+        message: responseText,
+        reasoning: "Could not parse structured response, returning raw text",
+      };
+    }
+
+    console.log("   Parsed response:", JSON.stringify(parsed, null, 2));
+
+    // Fix common LLM response issues before validation
+    // 1. Fix stateTransition if it's a string instead of object
+    if (typeof parsed.stateTransition === "string") {
+      parsed.stateTransition = { nextState: parsed.stateTransition };
+    }
+
+    // 2. Remove invalid or empty toolCall objects
+    if (parsed.toolCall) {
+      const validTools = ["clinic_search", "schedule_call", "escalate"];
+      // Remove if empty, missing tool property, or invalid tool name
+      if (
+        !parsed.toolCall.tool ||
+        Object.keys(parsed.toolCall).length === 0 ||
+        !validTools.includes(parsed.toolCall.tool)
+      ) {
+        console.log("   Removing invalid toolCall:", parsed.toolCall);
+        delete parsed.toolCall;
+      }
+    }
+
+    // 3. Remove empty extractedInfo objects
+    if (
+      parsed.extractedInfo &&
+      Object.keys(parsed.extractedInfo).length === 0
+    ) {
+      delete parsed.extractedInfo;
+    }
+
+    // 4. Validate stateTransition.nextState if present
+    if (parsed.stateTransition) {
+      const validStates = [
+        "GREETING",
+        "COLLECTING_INFO",
+        "COLLECTING_SYMPTOMS",
+        "ASSESSING_SEVERITY",
+        "PROVIDING_ADVICE",
+        "SEARCHING_CLINICS",
+        "PRESENTING_OPTIONS",
+        "SCHEDULING_CALL",
+        "CONFIRMING_APPOINTMENT",
+        "COMPLETED",
+        "ESCALATED",
+      ];
+      if (!validStates.includes(parsed.stateTransition.nextState)) {
+        console.log(
+          "   Removing invalid stateTransition:",
+          parsed.stateTransition,
+        );
+        delete parsed.stateTransition;
+      }
+    }
+
+    const validated = safeParseLLMResponse(parsed);
+
+    if (!validated.success) {
+      console.error("❌ LLM response validation failed:", validated.error);
+      // If we at least have a message field, use it
+      if (parsed.message && typeof parsed.message === "string") {
+        return {
+          message: parsed.message,
+          reasoning: parsed.reasoning || "Partial validation",
+        };
+      }
+      // Return a safe fallback response
+      return {
+        message:
+          "I apologize, but I'm having trouble processing that. Could you please rephrase your question?",
+        reasoning: `Validation error: ${validated.error.message}`,
+      };
+    }
+
+    console.log("✅ Response validated successfully");
+    return validated.data;
+  } catch (error) {
+    console.error("❌ LLM API call failed:", error);
+    throw error;
   }
-  
-  // Parse and validate the response
-  const parsed = JSON.parse(responseText);
-  const validated = safeParseLLMResponse(parsed);
-  
-  if (!validated.success) {
-    console.error('LLM response validation failed:', validated.error);
-    // Return a safe fallback response
-    return {
-      message: "I apologize, but I'm having trouble processing that. Could you please rephrase your question?",
-      reasoning: `Validation error: ${validated.error.message}`,
-    };
-  }
-  
-  return validated.data;
 }
 
 function buildSystemPrompt(context: LLMContext): string {
   const statePrompt = getSystemPromptForState(context.state);
-  
+
   // Add current context information
   const contextInfo = `
 Current conversation context:
 - State: ${context.state}
-${context.childName ? `- Child's name: ${context.childName}` : ''}
-${context.childAge ? `- Child's age: ${context.childAge}` : ''}
-${context.symptoms.length > 0 ? `- Reported symptoms: ${context.symptoms.join(', ')}` : ''}
-${context.symptomSeverity ? `- Assessed severity: ${context.symptomSeverity}` : ''}
-${context.location ? `- Location: ${context.location}` : ''}
-${context.selectedClinic ? `- Selected clinic: ${context.selectedClinic.name}` : ''}
+${context.userName ? `- User's name: ${context.userName}` : ""}
+${context.healthConcern ? `- Health concern: ${context.healthConcern}` : ""}
+${context.symptoms.length > 0 ? `- Reported symptoms: ${context.symptoms.join(", ")}` : ""}
+${context.symptomSeverity ? `- Assessed severity: ${context.symptomSeverity}` : ""}
+${context.location ? `- Location: ${context.location}` : ""}
+${context.selectedClinic ? `- Selected clinic: ${context.selectedClinic.name}` : ""}
 
-${context.toolResults ? `Tool results from previous action:\n${JSON.stringify(context.toolResults, null, 2)}` : ''}
+${context.toolResults ? `Tool results from previous action:\n${JSON.stringify(context.toolResults, null, 2)}` : ""}
 `;
 
   const schemaInfo = `
@@ -189,115 +256,173 @@ Always include:
 // For testing without OpenAI
 export async function generateMockLLMResponse(
   messages: Message[],
-  context: LLMContext
+  context: LLMContext,
 ): Promise<LLMResponse> {
-  const lastMessage = messages[messages.length - 1]?.content || '';
-  
+  const lastMessage = messages[messages.length - 1]?.content || "";
+
+  // Check if user is directly asking for clinics - skip triage, go straight to search
+  const wantsClinic =
+    /clinic|doctor|nearby|find.*clinic|need.*doctor|see.*doctor|urgent care|walk.?in/i.test(
+      lastMessage,
+    );
+
+  if (
+    wantsClinic &&
+    context.state !== "PRESENTING_OPTIONS" &&
+    context.state !== "SCHEDULING_CALL"
+  ) {
+    // If we already have location, search immediately
+    if (context.location) {
+      return {
+        message: "Let me find nearby clinics for you...",
+        stateTransition: { nextState: "SEARCHING_CLINICS" },
+        toolCall: {
+          tool: "clinic_search",
+          params: { location: context.location },
+        },
+      };
+    }
+    // Otherwise ask for location
+    return {
+      message: "I'll help you find a clinic. What's your zip code or city?",
+      stateTransition: { nextState: "SEARCHING_CLINICS" },
+    };
+  }
+
   // Handle tool results
   if (context.toolResults && context.toolResults.length > 0) {
-    const clinicResult = context.toolResults.find(t => t.toolName === 'clinic_search');
+    const clinicResult = context.toolResults.find(
+      (t) => t.toolName === "clinic_search",
+    );
     if (clinicResult) {
       return {
-        message: "I found some nearby clinics that can help! Here are your options. Which one would you like to schedule with?",
-        stateTransition: { nextState: 'PRESENTING_OPTIONS' },
+        message: "Found nearby clinics for you. Which one works for you?",
+        stateTransition: { nextState: "PRESENTING_OPTIONS" },
       };
     }
   }
-  
-  // Simple mock responses based on state
+
+  // Concise mock responses based on state
   switch (context.state) {
-    case 'GREETING':
-      return {
-        message: "Hi there! 👋 I'm BooBoo Buddy, here to help with your little one's health concerns. What's going on today?",
-        stateTransition: { nextState: 'COLLECTING_CHILD_INFO' },
-      };
-    
-    case 'COLLECTING_CHILD_INFO':
-      // Try to extract name and age from message
-      const nameMatch = lastMessage.match(/(?:name is |called |I'm |my (?:son|daughter|child) )(\w+)/i);
-      const ageMatch = lastMessage.match(/(\d+)\s*(?:years? old|yo|months?)/i);
-      
-      if (nameMatch && ageMatch) {
+    case "GREETING":
+      // Check if greeting message contains clinic request
+      if (wantsClinic) {
         return {
-          message: `Thanks! So ${nameMatch[1]} is ${ageMatch[1]} years old. What symptoms are they experiencing?`,
-          stateTransition: { nextState: 'COLLECTING_SYMPTOMS' },
-          extractedInfo: {
-            childName: nameMatch[1],
-            childAge: parseInt(ageMatch[1]),
-          },
+          message: "I'll help you find a clinic. What's your zip code or city?",
+          stateTransition: { nextState: "SEARCHING_CLINICS" },
         };
       }
-      
       return {
-        message: "Could you tell me your child's name and age so I can better help you?",
+        message: "Hi, I'm BooBoo Buddy. What's going on?",
+        stateTransition: { nextState: "COLLECTING_SYMPTOMS" },
       };
-    
-    case 'COLLECTING_SYMPTOMS':
+
+    case "COLLECTING_INFO":
       return {
-        message: "I understand. How long have these symptoms been going on? Are they getting better or worse?",
-        stateTransition: { nextState: 'ASSESSING_SEVERITY' },
+        message: "What symptoms are you experiencing?",
+        stateTransition: { nextState: "COLLECTING_SYMPTOMS" },
+      };
+
+    case "COLLECTING_SYMPTOMS":
+      return {
+        message: "How long has this been going on?",
+        stateTransition: { nextState: "ASSESSING_SEVERITY" },
         extractedInfo: {
           symptoms: [lastMessage],
         },
       };
-    
-    case 'ASSESSING_SEVERITY':
+
+    case "ASSESSING_SEVERITY":
+      // Check for red flag keywords
+      const redFlags =
+        /chest pain|can't breathe|unconscious|severe bleeding|stroke|seizure/i;
+      if (redFlags.test(lastMessage)) {
+        return {
+          message:
+            "This needs urgent attention. Let me find the nearest clinic or urgent care for you right away. What's your location?",
+          stateTransition: { nextState: "SEARCHING_CLINICS" },
+          extractedInfo: { symptomSeverity: "severe" },
+        };
+      }
+
       return {
-        message: "Based on what you've described, this sounds like it could use a professional look. Let me find some nearby clinics. What's your zip code or city?",
-        stateTransition: { nextState: 'SEARCHING_CLINICS' },
-        extractedInfo: {
-          symptomSeverity: 'moderate',
-        },
+        message:
+          "This should be seen by a doctor. Want me to find nearby clinics?",
+        stateTransition: { nextState: "SEARCHING_CLINICS" },
+        extractedInfo: { symptomSeverity: "moderate" },
       };
-    
-    case 'SEARCHING_CLINICS':
+
+    case "PROVIDING_ADVICE":
       return {
-        message: "Let me search for clinics near you...",
-        stateTransition: { nextState: 'PRESENTING_OPTIONS' },
+        message:
+          "• Rest and stay hydrated\n• Watch for fever >101°F or worsening symptoms\n• See a doctor if no improvement in 2-3 days",
+        stateTransition: { nextState: "COMPLETED" },
+      };
+
+    case "SEARCHING_CLINICS":
+      // If user provided a location (zip, city, etc.), trigger search
+      const hasLocation = /\d{5}|[a-zA-Z]+\s*(,\s*[a-zA-Z]{2})?/.test(
+        lastMessage,
+      );
+      if (hasLocation || lastMessage.toLowerCase().includes("yes")) {
+        return {
+          message: "Searching for nearby clinics...",
+          stateTransition: { nextState: "PRESENTING_OPTIONS" },
+          toolCall: {
+            tool: "clinic_search",
+            params: { location: lastMessage || context.location || "nearby" },
+          },
+          extractedInfo: { location: lastMessage },
+        };
+      }
+      return {
+        message: "What's your zip code or city so I can find clinics near you?",
+      };
+
+    case "PRESENTING_OPTIONS":
+      return {
+        message: "Which clinic do you prefer?",
+        stateTransition: { nextState: "SCHEDULING_CALL" },
+      };
+
+    case "SCHEDULING_CALL":
+      return {
+        message: "Scheduling your appointment...",
+        stateTransition: { nextState: "CONFIRMING_APPOINTMENT" },
         toolCall: {
-          tool: 'clinic_search',
+          tool: "schedule_call",
           params: {
-            location: lastMessage || 'nearby',
+            clinicId: "clinic-1",
+            reason: context.symptoms.join(", ") || "Consultation",
           },
         },
-        extractedInfo: {
-          location: lastMessage,
-        },
       };
-    
-    case 'PRESENTING_OPTIONS':
+
+    case "CONFIRMING_APPOINTMENT":
       return {
-        message: "Great choice! Would you like me to schedule an appointment for you?",
-        stateTransition: { nextState: 'SCHEDULING_CALL' },
+        message: "✓ Confirmed. Bring ID and insurance. Anything else?",
+        stateTransition: { nextState: "COMPLETED" },
       };
-    
-    case 'SCHEDULING_CALL':
+
+    case "COMPLETED":
       return {
-        message: "I've scheduled your appointment. You'll receive a confirmation shortly.",
-        stateTransition: { nextState: 'CONFIRMING_APPOINTMENT' },
+        message: "Take care! Come back if you need help.",
+      };
+
+    case "ESCALATED":
+      return {
+        message:
+          "This needs urgent care. Let me find the nearest clinic for you.",
+        stateTransition: { nextState: "SEARCHING_CLINICS" },
         toolCall: {
-          tool: 'schedule_call',
-          params: {
-            clinicId: 'clinic-1',
-            reason: context.symptoms.join(', ') || 'General consultation',
-          },
+          tool: "clinic_search",
+          params: { location: context.location || "nearby" },
         },
       };
-    
-    case 'CONFIRMING_APPOINTMENT':
-      return {
-        message: "Your appointment is confirmed! Is there anything else I can help you with?",
-        stateTransition: { nextState: 'COMPLETED' },
-      };
-    
-    case 'COMPLETED':
-      return {
-        message: "Take care! Feel free to come back anytime you need help. 💚",
-      };
-    
+
     default:
       return {
-        message: "How can I help you today?",
+        message: "What's going on?",
       };
   }
 }

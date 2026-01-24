@@ -18,16 +18,14 @@ model User {
   
   email     String   @unique
   name      String?
-  password  String   // In production, use proper hashing
+  password  String   // In productkion, use proper hashing
   
   // Onboarding status
   isOnboarded       Boolean  @default(false)
   onboardedAt       DateTime?
   
   // Profile information (collected during onboarding)
-  childName         String?
-  childAge          Int?
-  childAllergies    String?  // JSON array stored as string
+  allergies         String?  // JSON array stored as string
   medicalConditions String?  // JSON array stored as string
   preferredClinic   String?
   
@@ -56,8 +54,8 @@ model Conversation {
   state     String @default("GREETING")
   
   // Collected information
-  childName       String?
-  childAge        Int?
+  userName        String?
+  healthConcern   String?
   symptoms        String   @default("[]") // JSON array stored as string
   symptomSeverity String?   // mild, moderate, severe
   duration        String?

@@ -4,12 +4,14 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ConsentModal from "@/components/ConsentModal";
+import ClinicCard from "@/components/ClinicCard";
 
 interface Message {
   id: string;
   text: string;
   sender: "user" | "bot";
   timestamp: Date;
+  clinics?: Clinic[];
 }
 
 interface ApiMessage {
@@ -28,6 +30,10 @@ interface Clinic {
   distance?: number;
   availableSlots: string[];
   specialties: string[];
+  lat?: number;
+  lng?: number;
+  website?: string;
+  placeId?: string;
 }
 
 interface ToolResult {
@@ -42,16 +48,17 @@ interface ToolResult {
 }
 
 const quickReplies = [
-  "My child is sick",
-  "Fever and cough",
+  "I'm not feeling well",
+  "I have a headache",
   "Stomach ache",
-  "Need a doctor",
+  "Find nearby clinics",
 ];
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isSearchingClinics, setIsSearchingClinics] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
@@ -137,7 +144,9 @@ export default function ChatPage() {
     }
   }, [initConversation, hasConsented]);
 
-  const sendMessageToApi = async (userMessage: string): Promise<{
+  const sendMessageToApi = async (
+    userMessage: string,
+  ): Promise<{
     message: ApiMessage;
     toolResults?: ToolResult[];
   }> => {
@@ -164,24 +173,31 @@ export default function ChatPage() {
     return data;
   };
 
+  const extractClinicsFromToolResults = (
+    toolResults?: ToolResult[],
+  ): Clinic[] | undefined => {
+    if (!toolResults || toolResults.length === 0) return undefined;
+
+    const clinicResult = toolResults.find(
+      (tr) => tr.toolName === "clinic_search",
+    );
+    if (
+      clinicResult?.result.clinics &&
+      clinicResult.result.clinics.length > 0
+    ) {
+      return clinicResult.result.clinics;
+    }
+    return undefined;
+  };
+
   const formatToolResults = (toolResults?: ToolResult[]): string => {
     if (!toolResults || toolResults.length === 0) return "";
 
     let formatted = "";
     for (const tr of toolResults) {
-      if (tr.toolName === "clinic_search" && tr.result.clinics) {
-        formatted += "\n\n📍 **Nearby Clinics Found:**\n";
-        tr.result.clinics.forEach((clinic, index) => {
-          formatted += `\n${index + 1}. **${clinic.name}**`;
-          formatted += `\n   📍 ${clinic.address}`;
-          formatted += `\n   📞 ${clinic.phone}`;
-          if (clinic.rating) formatted += `\n   ⭐ ${clinic.rating}/5`;
-          if (clinic.distance) formatted += `\n   🚗 ${clinic.distance} miles`;
-          if (clinic.availableSlots.length > 0) {
-            const nextSlot = new Date(clinic.availableSlots[0]);
-            formatted += `\n   ⏰ Next: ${nextSlot.toLocaleString()}`;
-          }
-        });
+      // Skip clinic_search - we handle that with ClinicCard components
+      if (tr.toolName === "clinic_search") {
+        continue;
       } else if (tr.toolName === "schedule_call" && tr.result.confirmed) {
         formatted += `\n\n✅ **Appointment Confirmed!**`;
         formatted += `\n📅 ${new Date(tr.result.appointmentTime!).toLocaleString()}`;
@@ -195,6 +211,9 @@ export default function ChatPage() {
     const messageText = text || inputValue.trim();
     if (!messageText || isTyping) return;
 
+    // Check if this might trigger a clinic search
+    const mightSearchClinics = /clinic|doctor|nearby|find|search|location|zip/i.test(messageText);
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       text: messageText,
@@ -205,11 +224,18 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsTyping(true);
+    
+    if (mightSearchClinics) {
+      setIsSearchingClinics(true);
+    }
 
     try {
       const response = await sendMessageToApi(messageText);
 
-      // Format the response with any tool results
+      // Extract clinics from tool results
+      const clinics = extractClinicsFromToolResults(response.toolResults);
+
+      // Format any other tool results (non-clinic)
       let botText = response.message.content;
       const toolFormatted = formatToolResults(response.toolResults);
       if (toolFormatted) {
@@ -221,6 +247,7 @@ export default function ChatPage() {
         text: botText,
         sender: "bot",
         timestamp: new Date(response.message.createdAt),
+        clinics: clinics,
       };
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
@@ -234,7 +261,21 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
+      setIsSearchingClinics(false);
     }
+  };
+
+  // Handle scheduling appointment with a clinic
+  const handleScheduleClinic = async (clinic: Clinic) => {
+    // Send a message to schedule with this clinic
+    await handleSendMessage(
+      `I'd like to schedule an appointment at ${clinic.name}`,
+    );
+  };
+
+  // Handle calling a clinic (just log for now, the tel: link handles the call)
+  const handleCallClinic = (clinic: Clinic) => {
+    console.log(`Initiating call to ${clinic.name}: ${clinic.phone}`);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -291,135 +332,185 @@ export default function ChatPage() {
         </header>
 
         {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${
-                message.sender === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mx-auto max-w-3xl space-y-4">
+            {messages.map((message) => (
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                  message.sender === "user"
-                    ? "bg-teal-600 text-white"
-                    : "bg-white shadow-md dark:bg-zinc-800"
+                key={message.id}
+                className={`flex flex-col ${
+                  message.sender === "user" ? "items-end" : "items-start"
                 }`}
               >
-                {message.sender === "bot" && (
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="text-sm">🩹</span>
-                    <span className="text-xs font-medium text-teal-600 dark:text-teal-400">
-                      BooBoo Buddy
-                    </span>
-                  </div>
-                )}
-                <p
-                  className={`whitespace-pre-line text-sm ${
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     message.sender === "user"
-                      ? "text-white"
-                      : "text-zinc-700 dark:text-zinc-300"
+                      ? "bg-teal-600 text-white"
+                      : "bg-white shadow-md dark:bg-zinc-800"
                   }`}
                 >
-                  {message.text}
-                </p>
-                <p
-                  className={`mt-1 text-xs ${
-                    message.sender === "user"
-                      ? "text-teal-100"
-                      : "text-zinc-400 dark:text-zinc-500"
-                  }`}
-                >
-                  {message.timestamp.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </p>
-              </div>
-            </div>
-          ))}
+                  {message.sender === "bot" && (
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-sm">🩹</span>
+                      <span className="text-xs font-medium text-teal-600 dark:text-teal-400">
+                        BooBoo Buddy
+                      </span>
+                    </div>
+                  )}
+                  <p
+                    className={`whitespace-pre-line text-sm ${
+                      message.sender === "user"
+                        ? "text-white"
+                        : "text-zinc-700 dark:text-zinc-300"
+                    }`}
+                  >
+                    {message.text}
+                  </p>
+                  <p
+                    className={`mt-1 text-xs ${
+                      message.sender === "user"
+                        ? "text-teal-100"
+                        : "text-zinc-400 dark:text-zinc-500"
+                    }`}
+                  >
+                    {message.timestamp.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
 
-          {/* Typing Indicator */}
-          {isTyping && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-white px-4 py-3 shadow-md dark:bg-zinc-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">🩹</span>
-                  <div className="flex gap-1">
-                    <span
-                      className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
-                      style={{ animationDelay: "0ms" }}
-                    ></span>
-                    <span
-                      className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
-                      style={{ animationDelay: "150ms" }}
-                    ></span>
-                    <span
-                      className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
-                      style={{ animationDelay: "300ms" }}
-                    ></span>
+                {/* Clinic Cards - shown below bot messages with clinic results */}
+                {message.sender === "bot" &&
+                  message.clinics &&
+                  message.clinics.length > 0 && (
+                    <div className="mt-3 w-full max-w-[90%] space-y-3">
+                      <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        📍 Nearby Clinics Found:
+                      </p>
+                      {message.clinics.map((clinic) => (
+                        <ClinicCard
+                          key={clinic.id}
+                          clinic={clinic}
+                          onSchedule={handleScheduleClinic}
+                          onCall={handleCallClinic}
+                        />
+                      ))}
+                    </div>
+                  )}
+              </div>
+            ))}
+
+            {/* Typing Indicator */}
+            {isTyping && !isSearchingClinics && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl bg-white px-4 py-3 shadow-md dark:bg-zinc-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">🩹</span>
+                    <div className="flex gap-1">
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
+                        style={{ animationDelay: "0ms" }}
+                      ></span>
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
+                        style={{ animationDelay: "150ms" }}
+                      ></span>
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-teal-400"
+                        style={{ animationDelay: "300ms" }}
+                      ></span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
+            {/* Clinic Search Loading Indicator */}
+            {isSearchingClinics && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl bg-white px-4 py-4 shadow-md dark:bg-zinc-800 max-w-[80%]">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <span className="text-2xl">🏥</span>
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-teal-500"></span>
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                        Searching for nearby clinics...
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Finding the best options for you
+                      </p>
+                    </div>
+                    <div className="ml-2">
+                      <svg className="animate-spin h-5 w-5 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* Quick Replies */}
-      <div className="border-t border-teal-200 bg-white/50 px-4 py-2 dark:border-teal-800 dark:bg-zinc-900/50">
-        <div className="mx-auto flex max-w-3xl gap-2 overflow-x-auto pb-2">
-          {quickReplies.map((reply) => (
-            <button
-              key={reply}
-              onClick={() => handleSendMessage(reply)}
-              disabled={isTyping}
-              className="shrink-0 rounded-full border border-teal-300 bg-white px-4 py-1.5 text-sm text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-teal-700 dark:bg-zinc-800 dark:text-teal-400 dark:hover:bg-zinc-700"
-            >
-              {reply}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Input Area */}
-      <div className="border-t border-teal-200 bg-white p-4 dark:border-teal-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-3xl items-end gap-3">
-          <div className="relative flex-1">
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyPress}
-              placeholder="Type your health question..."
-              rows={1}
-              disabled={isTyping}
-              className="w-full resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-            />
+            <div ref={messagesEndRef} />
           </div>
-          <button
-            onClick={() => handleSendMessage()}
-            disabled={!inputValue.trim() || isTyping}
-            className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-600 text-white transition-colors hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              className="h-5 w-5"
-            >
-              <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-            </svg>
-          </button>
         </div>
-        <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-zinc-400 dark:text-zinc-500">
-          BooBoo Buddy provides general health information only. Always consult
-          a healthcare professional for medical advice.
-        </p>
+
+        {/* Quick Replies */}
+        <div className="border-t border-teal-200 bg-white/50 px-4 py-2 dark:border-teal-800 dark:bg-zinc-900/50">
+          <div className="mx-auto flex max-w-3xl gap-2 overflow-x-auto pb-2">
+            {quickReplies.map((reply) => (
+              <button
+                key={reply}
+                onClick={() => handleSendMessage(reply)}
+                disabled={isTyping}
+                className="shrink-0 rounded-full border border-teal-300 bg-white px-4 py-1.5 text-sm text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-teal-700 dark:bg-zinc-800 dark:text-teal-400 dark:hover:bg-zinc-700"
+              >
+                {reply}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t border-teal-200 bg-white p-4 dark:border-teal-800 dark:bg-zinc-900">
+          <div className="mx-auto flex max-w-3xl items-end gap-3">
+            <div className="relative flex-1">
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Type your health question..."
+                rows={1}
+                disabled={isTyping}
+                className="w-full resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              />
+            </div>
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={!inputValue.trim() || isTyping}
+              className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-600 text-white transition-colors hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="h-5 w-5"
+              >
+                <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+              </svg>
+            </button>
+          </div>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-zinc-400 dark:text-zinc-500">
+            BooBoo Buddy provides general health information only. Always
+            consult a healthcare professional for medical advice.
+          </p>
+        </div>
       </div>
-    </div>
     </>
   );
 }
