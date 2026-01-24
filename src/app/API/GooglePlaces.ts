@@ -132,7 +132,7 @@ export async function getPlaceDetails(
 export async function getNearbyClinicDetails(
   lat: number,
   lng: number,
-  limit: number = 3,
+  limit: number = 5,
   radius: number = 5000
 ) {
   try {

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const lat = parseFloat(url.searchParams.get("lat") || "40.7128");
     const lng = parseFloat(url.searchParams.get("lng") || "-74.0060");
-    const limit = parseInt(url.searchParams.get("limit") || "3");
+    const limit = parseInt(url.searchParams.get("limit") || "5");
     const radius = parseInt(url.searchParams.get("radius") || "5000");
 
     // Validate coordinates
