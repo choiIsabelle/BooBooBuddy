@@ -134,10 +134,28 @@ Only respond with the JSON object, no other text.`;
     } catch (parseError) {
       console.error("❌ Failed to parse JSON:", parseError);
       console.error("   Response text:", responseText);
-      // Return the raw response as the message
+      // Return the raw response as the message with inferred state
+      // Check if the response mentions clinics or seeking care
+      const mentionsClinics =
+        /clinic|doctor|medical attention|seek care|urgent care|find.*care/i.test(
+          responseText,
+        );
+      const asksQuestion = /\?/.test(responseText);
+
+      let inferredState = context.state; // Default: stay in current state
+      if (mentionsClinics) {
+        inferredState = "SEARCHING_CLINICS" as ConversationState;
+      } else if (asksQuestion && context.state === "GREETING") {
+        inferredState = "COLLECTING_SYMPTOMS" as ConversationState;
+      }
+
       return {
         message: responseText,
         reasoning: "Could not parse structured response, returning raw text",
+        stateTransition:
+          inferredState !== context.state
+            ? { nextState: inferredState }
+            : undefined,
       };
     }
 
