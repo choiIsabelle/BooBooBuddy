@@ -79,7 +79,10 @@ export default function ChatPage() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const router = useRouter();
 
   // Request browser geolocation on mount
@@ -123,6 +126,57 @@ export default function ChatPage() {
       setUserId(storedUserId);
     }
   }, []);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    // Check if browser supports speech recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map(result => result[0].transcript)
+          .join('');
+        setInputValue(transcript);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Toggle voice input
+  const toggleListening = () => {
+    if (!recognitionRef.current) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setInputValue(''); // Clear input when starting to listen
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
 
   const handleAcceptConsent = () => {
     localStorage.setItem("booboobuddy_consent", "true");
@@ -630,12 +684,48 @@ export default function ChatPage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyPress}
-                placeholder="Type your health question..."
+                placeholder={isListening ? "Listening..." : "Type or speak your health question..."}
                 rows={1}
                 disabled={isTyping}
-                className="w-full resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className={`w-full resize-none rounded-xl border bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 ${
+                  isListening 
+                    ? 'border-red-400 ring-2 ring-red-400/30 dark:border-red-500' 
+                    : 'border-zinc-300 dark:border-zinc-700'
+                }`}
               />
+              {isListening && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <span className="flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                </div>
+              )}
             </div>
+            {/* Microphone Button */}
+            {speechSupported && (
+              <button
+                onClick={toggleListening}
+                disabled={isTyping}
+                className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isListening
+                    ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse'
+                    : 'bg-zinc-200 text-zinc-600 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                }`}
+                title={isListening ? "Stop listening" : "Start voice input"}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="h-5 w-5"
+                >
+                  <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                  <path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" />
+                </svg>
+              </button>
+            )}
+            {/* Send Button */}
             <button
               onClick={() => handleSendMessage()}
               disabled={!inputValue.trim() || isTyping}
