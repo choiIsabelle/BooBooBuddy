@@ -612,6 +612,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // EMERGENCY DETECTION: If LLM mentions 911/emergency, also search for nearby clinics
+    const mentions911 =
+      /\b(911|call 911|emergency|emergency room|ER|ambulance)\b/i.test(
+        workflowResult.responseMessage,
+      );
+    const hasNoClinicResults =
+      !toolResults ||
+      toolResults.length === 0 ||
+      !toolResults.some((tr) => tr.toolName === "clinic_search");
+
+    if (mentions911 && hasNoClinicResults && effectiveLocation) {
+      console.log(
+        "🚨 Emergency detected in response - also searching for nearby clinics",
+      );
+
+      // Execute clinic search to provide options in addition to 911 advice
+      const emergencyClinicResult = await executeTool(
+        { tool: "clinic_search", params: { location: effectiveLocation } },
+        conversation.id,
+      );
+
+      if (emergencyClinicResult.success) {
+        toolResults = [
+          ...(toolResults || []),
+          { toolName: "clinic_search", result: emergencyClinicResult.data },
+        ];
+
+        // Append clinic info to the message
+        workflowResult.responseMessage +=
+          "\n\nWhile you call 911, here are nearby urgent care options if needed:";
+      }
+    } else if (mentions911 && hasNoClinicResults && !effectiveLocation) {
+      // We need location but don't have it - append a location request
+      console.log(
+        "🚨 Emergency detected but no location - prompting for location",
+      );
+      workflowResult.responseMessage +=
+        "\n\nIf you'd like me to also find nearby urgent care clinics, please share your zip code or city.";
+    }
+
     // Save assistant message
     const assistantMessage = await prisma.message.create({
       data: {
