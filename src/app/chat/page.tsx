@@ -21,6 +21,12 @@ interface ApiMessage {
   createdAt: string;
 }
 
+interface TriageInfo {
+  level: number;
+  label: string;
+  description: string;
+}
+
 interface Clinic {
   id: string;
   name: string;
@@ -65,6 +71,11 @@ export default function ChatPage() {
     lat: number;
     lng: number;
   } | null>(null);
+  const [triageInfo, setTriageInfo] = useState<TriageInfo>({
+    level: 0,
+    label: "Listening",
+    description: "Tell me what's going on",
+  });
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(true);
@@ -187,6 +198,7 @@ export default function ChatPage() {
   ): Promise<{
     message: ApiMessage;
     toolResults?: ToolResult[];
+    triage?: TriageInfo;
   }> => {
     console.log("📤 Sending message to API:");
     console.log("   conversationId:", conversationId);
@@ -213,6 +225,11 @@ export default function ChatPage() {
     // Update conversation ID if this was a new conversation
     if (!conversationId && data.conversationId) {
       setConversationId(data.conversationId);
+    }
+
+    // Update triage info if provided
+    if (data.triage) {
+      setTriageInfo(data.triage);
     }
 
     return data;
@@ -376,6 +393,63 @@ export default function ChatPage() {
             </button>
           </div>
         </header>
+
+        {/* Triage Progression Indicator */}
+        <div className="border-b border-teal-200 bg-white/60 px-4 py-2 backdrop-blur-sm dark:border-teal-800 dark:bg-zinc-900/60">
+          <div className="mx-auto max-w-3xl">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Assessment Progress
+                </span>
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    triageInfo.level === 0
+                      ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 animate-pulse"
+                      : triageInfo.level === 1
+                        ? "bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-400"
+                        : triageInfo.level === 2
+                          ? "bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-400"
+                          : triageInfo.level === 3
+                            ? "bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-400"
+                            : "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-400"
+                  }`}
+                >
+                  {triageInfo.level === 0 && (
+                    <span className="inline-block w-1.5 h-1.5 bg-teal-500 rounded-full mr-1.5 animate-ping" />
+                  )}
+                  {triageInfo.label}
+                </span>
+              </div>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {triageInfo.description}
+              </span>
+            </div>
+            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden dark:bg-gray-700">
+              <div
+                className={`h-full transition-all duration-500 ease-out rounded-full ${
+                  triageInfo.level === 0
+                    ? "bg-gray-400"
+                    : triageInfo.level === 1
+                      ? "bg-blue-500"
+                      : triageInfo.level === 2
+                        ? "bg-yellow-500"
+                        : triageInfo.level === 3
+                          ? "bg-orange-500"
+                          : "bg-red-500"
+                }`}
+                style={{ width: `${(triageInfo.level / 4) * 100}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+              <span>Info</span>
+              <span>Symptoms</span>
+              <span>Assessing</span>
+              <span>Advice</span>
+              <span>Clinic</span>
+            </div>
+          </div>
+        </div>
 
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto p-4">

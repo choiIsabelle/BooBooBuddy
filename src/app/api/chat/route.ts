@@ -128,6 +128,62 @@ function extractLocationFromMessage(message: string): string | null {
   return null;
 }
 
+// Calculate triage level from conversation state
+// Returns a number 0-4 indicating progression toward clinic recommendation
+// 0 = info gathering, 4 = clinic recommended
+function getTriageLevel(state: string): {
+  level: number;
+  label: string;
+  description: string;
+} {
+  switch (state) {
+    case "GREETING":
+      return {
+        level: 0,
+        label: "Listening",
+        description: "Tell me what's going on",
+      };
+    case "COLLECTING_INFO":
+    case "COLLECTING_SYMPTOMS":
+      return {
+        level: 1,
+        label: "Understanding",
+        description: "Gathering symptom details",
+      };
+    case "ASSESSING_SEVERITY":
+      return {
+        level: 2,
+        label: "Assessing",
+        description: "Evaluating your symptoms",
+      };
+    case "PROVIDING_ADVICE":
+      return {
+        level: 3,
+        label: "Advising",
+        description: "Considering care options",
+      };
+    case "SEARCHING_CLINICS":
+    case "PRESENTING_OPTIONS":
+    case "SCHEDULING_CALL":
+    case "CONFIRMING_APPOINTMENT":
+      return {
+        level: 4,
+        label: "Clinic Recommended",
+        description: "Professional care advised",
+      };
+    case "ESCALATED":
+      return { level: 4, label: "Urgent", description: "Seek immediate care" };
+    case "COMPLETED":
+      return { level: 0, label: "Complete", description: "Take care!" };
+    default:
+      return {
+        level: 0,
+        label: "Listening",
+        description: "Tell me what's going on",
+      };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -275,6 +331,7 @@ export async function POST(request: NextRequest) {
           createdAt: assistantMessage.createdAt.toISOString(),
         },
         state: "PRESENTING_OPTIONS",
+        triage: getTriageLevel("PRESENTING_OPTIONS"),
         toolResults: toolResult.success
           ? [{ toolName: "clinic_search", result: toolResult.data }]
           : undefined,
@@ -333,6 +390,7 @@ export async function POST(request: NextRequest) {
           createdAt: assistantMessage.createdAt.toISOString(),
         },
         state: "PRESENTING_OPTIONS",
+        triage: getTriageLevel("PRESENTING_OPTIONS"),
         toolResults: toolResult.success
           ? [{ toolName: "clinic_search", result: toolResult.data }]
           : undefined,
@@ -371,6 +429,7 @@ export async function POST(request: NextRequest) {
           createdAt: assistantMessage.createdAt.toISOString(),
         },
         state: "SEARCHING_CLINICS",
+        triage: getTriageLevel("SEARCHING_CLINICS"),
       });
     }
 
@@ -563,6 +622,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Calculate triage level for the new state
+    const triageInfo = getTriageLevel(workflowResult.newState);
+
     // Return response
     return NextResponse.json({
       conversationId: conversation.id,
@@ -573,6 +635,7 @@ export async function POST(request: NextRequest) {
         createdAt: assistantMessage.createdAt.toISOString(),
       },
       state: workflowResult.newState,
+      triage: triageInfo,
       toolResults,
     });
   } catch (error) {
