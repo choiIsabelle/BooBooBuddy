@@ -92,16 +92,19 @@ export default function PostSignupPage() {
 
     setIsSubmitting(true);
     try {
+      const payload = {
+        userId: userData.id,
+        allergies: allergies,           // Fixed: was "childAllergies"
+        medicalConditions: conditions,
+        preferredClinic,
+        location,
+      };
+      console.log("🚀 Sending onboarding data:", JSON.stringify(payload, null, 2));
+      
       const response = await fetch("/api/auth/complete-onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: userData.id,
-          childAllergies: allergies,
-          medicalConditions: conditions,
-          preferredClinic,
-          location,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {

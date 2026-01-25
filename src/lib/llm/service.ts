@@ -73,8 +73,14 @@ export async function generateLLMResponse(
   console.log("🤖 generateLLMResponse called");
   console.log("   Messages count:", messages.length);
   console.log("   Context state:", context.state);
+  console.log("   Context userProfile:", JSON.stringify(context.userProfile, null, 2));
 
   const systemPrompt = buildSystemPrompt(context);
+  
+  console.log("📝 SYSTEM PROMPT BEING SENT TO LLM:");
+  console.log("---START---");
+  console.log(systemPrompt);
+  console.log("---END---");
 
   const openai = getOpenAIClient();
 
@@ -236,6 +242,11 @@ function buildSystemPrompt(context: LLMContext): string {
   let userProfileInfo = "";
   if (context.userProfile) {
     const profile = context.userProfile;
+    console.log("🏥 Building prompt with user medical profile:");
+    console.log(`   Name: ${profile.name || "(none)"}`);
+    console.log(`   Allergies: ${profile.allergies.length > 0 ? profile.allergies.join(", ") : "(none)"}`);
+    console.log(`   Conditions: ${profile.medicalConditions.length > 0 ? profile.medicalConditions.join(", ") : "(none)"}`);
+    
     userProfileInfo = `
 IMPORTANT - User's Medical Profile (from their account):
 ${profile.name ? `- User's name: ${profile.name}` : ""}
@@ -248,6 +259,8 @@ Use this medical history to provide personalized advice. For example:
 - If they have allergies, be careful with medication recommendations
 - Address them by name if known
 `;
+  } else {
+    console.log("⚠️ No user profile available for LLM context");
   }
 
   // Add current context information
@@ -328,6 +341,11 @@ export async function generateMockLLMResponse(
   }
 
   // Concise mock responses based on state
+  // Build personalized greeting if user profile is available
+  const userName = context.userProfile?.name || context.userName;
+  const hasAllergies = context.userProfile?.allergies && context.userProfile.allergies.length > 0;
+  const hasConditions = context.userProfile?.medicalConditions && context.userProfile.medicalConditions.length > 0;
+  
   switch (context.state) {
     case "GREETING":
       // Check if greeting message contains clinic request
@@ -337,8 +355,29 @@ export async function generateMockLLMResponse(
           stateTransition: { nextState: "SEARCHING_CLINICS" },
         };
       }
+      
+      // Build personalized greeting based on user profile
+      let greeting = userName 
+        ? `Hi ${userName}! 👋 I'm BooBoo Buddy, your friendly health assistant.`
+        : "Hi there! 👋 I'm BooBoo Buddy, your friendly health assistant.";
+      
+      // Add medical context awareness
+      if (hasAllergies || hasConditions) {
+        greeting += " I see from your profile that";
+        const parts: string[] = [];
+        if (hasConditions) {
+          parts.push(` you have ${context.userProfile!.medicalConditions.join(", ")} on file`);
+        }
+        if (hasAllergies) {
+          parts.push(` you're allergic to ${context.userProfile!.allergies.join(", ")}`);
+        }
+        greeting += parts.join(" and") + ". I'll keep that in mind while helping you today.";
+      }
+      
+      greeting += " What's going on?";
+      
       return {
-        message: "Hi, I'm BooBoo Buddy. What's going on?",
+        message: greeting,
         stateTransition: { nextState: "COLLECTING_SYMPTOMS" },
       };
 
@@ -367,6 +406,30 @@ export async function generateMockLLMResponse(
             "This needs urgent attention. Let me find the nearest clinic or urgent care for you right away. What's your location?",
           stateTransition: { nextState: "SEARCHING_CLINICS" },
           extractedInfo: { symptomSeverity: "severe" },
+        };
+      }
+      
+      // Check for condition-specific concerns (e.g., headache + epilepsy)
+      const hasEpilepsy = context.userProfile?.medicalConditions?.some(c => 
+        c.toLowerCase().includes('epilepsy') || c.toLowerCase().includes('seizure')
+      );
+      const mentionsHeadache = /headache|head.*hurt|head.*pain|migraine/i.test(lastMessage);
+      
+      if (hasEpilepsy && mentionsHeadache) {
+        return {
+          message: `Given your history of epilepsy, headaches can sometimes be related to seizure activity. ${userName ? userName + ", I" : "I"}'d recommend getting this checked out. Would you like me to find a nearby clinic?`,
+          stateTransition: { nextState: "SEARCHING_CLINICS" },
+          extractedInfo: { symptomSeverity: "moderate" },
+        };
+      }
+      
+      // Check for allergy concerns
+      if (hasAllergies && /rash|hives|swelling|itching|breathing/i.test(lastMessage)) {
+        const allergyList = context.userProfile!.allergies.join(", ");
+        return {
+          message: `Given your allergies (${allergyList}), these symptoms could indicate an allergic reaction. Have you been exposed to any of your known allergens? Let me find you a clinic to be safe.`,
+          stateTransition: { nextState: "SEARCHING_CLINICS" },
+          extractedInfo: { symptomSeverity: "moderate" },
         };
       }
 

@@ -106,6 +106,8 @@ export async function getUserForAuth(email: string) {
 export async function updateUser(id: string, input: UpdateUserInput) {
   const updateData: Record<string, unknown> = {};
 
+  console.log("🔄 updateUser called with input:", JSON.stringify(input, null, 2));
+
   if (input.name !== undefined) updateData.name = input.name;
   if (input.isOnboarded !== undefined) updateData.isOnboarded = input.isOnboarded;
   if (input.onboardedAt !== undefined) updateData.onboardedAt = input.onboardedAt;
@@ -114,16 +116,24 @@ export async function updateUser(id: string, input: UpdateUserInput) {
   
   // Store arrays as JSON strings
   if (input.allergies !== undefined) {
+    console.log("   Allergies input:", input.allergies);
     updateData.allergies = JSON.stringify(input.allergies);
+    console.log("   Allergies JSON:", updateData.allergies);
   }
   if (input.medicalConditions !== undefined) {
+    console.log("   MedicalConditions input:", input.medicalConditions);
     updateData.medicalConditions = JSON.stringify(input.medicalConditions);
+    console.log("   MedicalConditions JSON:", updateData.medicalConditions);
   }
+
+  console.log("   Final updateData:", JSON.stringify(updateData, null, 2));
 
   const user = await db.user.update({
     where: { id },
     data: updateData,
   });
+
+  console.log("   Updated user allergies from DB:", user.allergies);
 
   return transformUser(user);
 }

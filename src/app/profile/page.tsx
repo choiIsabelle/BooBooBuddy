@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -94,7 +94,59 @@ export default function ProfilePage() {
     "personal" | "medical" | "facilities"
   >("personal");
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const router = useRouter();
+
+  // Load user profile from database on mount
+  useEffect(() => {
+    const storedUserId = localStorage.getItem("booboobuddy_userId");
+    if (!storedUserId) {
+      router.push("/login");
+      return;
+    }
+    setUserId(storedUserId);
+
+    const fetchProfile = async () => {
+      try {
+        const response = await fetch(`/api/user/profile?userId=${storedUserId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const user = data.user;
+          
+          // Map database user to profile structure
+          setProfile(prev => ({
+            ...prev,
+            firstName: user.name?.split(" ")[0] || "",
+            lastName: user.name?.split(" ").slice(1).join(" ") || "",
+            email: user.email || "",
+            location: {
+              ...prev.location,
+              zipCode: user.location || "",
+            },
+            // Convert simple string arrays to objects with IDs
+            allergies: (user.allergies || []).map((name: string, idx: number) => ({
+              id: idx + 1,
+              name,
+              severity: "moderate" as const,
+            })),
+            ailments: (user.medicalConditions || []).map((name: string, idx: number) => ({
+              id: idx + 1,
+              name,
+              diagnosedDate: "",
+            })),
+          }));
+        }
+      } catch (error) {
+        console.error("Error loading profile:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [router]);
 
   // Allergy handlers
   const [newAllergy, setNewAllergy] = useState<{
@@ -185,13 +237,47 @@ export default function ProfilePage() {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!userId) return;
+    
     setIsSaving(true);
-    // Simulate save
-    setTimeout(() => {
+    setSaveMessage(null);
+    
+    try {
+      // Convert profile to database format
+      const name = [profile.firstName, profile.lastName].filter(Boolean).join(" ") || undefined;
+      const allergies = profile.allergies.map(a => a.name);
+      const medicalConditions = profile.ailments.map(a => a.name);
+      const location = profile.location.zipCode || undefined;
+      
+      console.log("💾 Saving profile:", { name, allergies, medicalConditions, location });
+      
+      const response = await fetch("/api/user/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          name,
+          allergies,
+          medicalConditions,
+          location,
+        }),
+      });
+      
+      if (response.ok) {
+        setSaveMessage("✅ Profile saved successfully!");
+        console.log("Profile saved:", profile);
+      } else {
+        setSaveMessage("❌ Failed to save profile. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      setSaveMessage("❌ Error saving profile. Please try again.");
+    } finally {
       setIsSaving(false);
-      console.log("Profile saved:", profile);
-    }, 1000);
+      // Clear message after 3 seconds
+      setTimeout(() => setSaveMessage(null), 3000);
+    }
   };
 
   const getSeverityColor = (severity: string) => {
@@ -221,6 +307,20 @@ export default function ProfilePage() {
         return "🏢";
     }
   };
+
+  // Show loading state while fetching profile
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-950 dark:to-cyan-900">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900">
+            <span className="text-3xl animate-bounce">🩹</span>
+          </div>
+          <p className="text-teal-700 dark:text-teal-400">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-950 dark:to-cyan-900">
@@ -274,7 +374,12 @@ export default function ProfilePage() {
                 Manage your health information and preferences
               </p>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-4">
+              {saveMessage && (
+                <span className={`text-sm font-medium ${saveMessage.includes("✅") ? "text-green-600" : "text-red-600"}`}>
+                  {saveMessage}
+                </span>
+              )}
               <button
                 onClick={handleSave}
                 disabled={isSaving}

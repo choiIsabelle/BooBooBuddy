@@ -141,7 +141,11 @@ export default function ChatPage() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "hello" }),
+        body: JSON.stringify({ 
+          message: "hello",
+          userId: userId || undefined,  // Include userId for personalized greeting
+          geolocation: userLocation || undefined,
+        }),
       });
 
       if (!response.ok) throw new Error("Failed to start conversation");
@@ -174,7 +178,7 @@ export default function ChatPage() {
     } finally {
       setIsTyping(false);
     }
-  }, [isInitialized, hasConsented]);
+  }, [isInitialized, hasConsented, userId, userLocation]);
 
   useEffect(() => {
     if (hasConsented) {
