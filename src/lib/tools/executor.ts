@@ -1,6 +1,6 @@
 import { ToolCall } from "../schemas/llm-response";
 import prisma from "../db";
-import { getNearbyClinicDetails } from "../../app/api/GooglePlaces";
+import { getNearbyClinicDetails } from "../../app/API/GooglePlaces";
 
 export interface ToolResult {
   success: boolean;
