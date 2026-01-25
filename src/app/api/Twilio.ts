@@ -17,13 +17,18 @@ export async function makeCallWithMessage(toNumber: string, message: string) {
   try {
     if (!accountSid || !authToken || !twilioPhoneNumber) {
       throw new Error(
-        "Missing Twilio credentials. Check environment variables."
+        "Missing Twilio credentials. Check environment variables.",
       );
     }
 
     console.log(`📞 Making call to ${toNumber} with message: "${message}"`);
 
+    // Get the base URL for callbacks
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
     // Create TwiML inline
+    // Note: transcribe="true" uses Twilio's legacy transcription
+    // transcribeCallback will receive the completed transcription
     const twiml = `
       <Response>
         <Say voice="alice">
@@ -32,9 +37,12 @@ export async function makeCallWithMessage(toNumber: string, message: string) {
         <Record
           maxLength="120"
           transcribe="true"
+          transcribeCallback="${baseUrl}/api/twilio/transcription-callback"
+          playBeep="false"
+          timeout="10"
         />
         <Say voice="alice">
-          Thank you. Goodbye.
+          Thank you for your response. Goodbye.
         </Say>
       </Response>
     `;
