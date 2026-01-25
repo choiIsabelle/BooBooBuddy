@@ -22,12 +22,14 @@ interface ClinicCarouselProps {
   clinics: Clinic[];
   onSchedule?: (clinic: Clinic) => void;
   onCall?: (clinic: Clinic) => void;
+  symptoms?: string;
 }
 
 export default function ClinicCarousel({
   clinics,
   onSchedule,
   onCall,
+  symptoms,
 }: ClinicCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -144,6 +146,7 @@ export default function ClinicCarousel({
                 onSchedule={onSchedule}
                 onCall={onCall}
                 isSelected={index === currentIndex}
+                symptoms={symptoms}
               />
             </div>
           ))}

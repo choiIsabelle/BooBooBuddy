@@ -22,6 +22,8 @@ interface ClinicCardProps {
   onSchedule?: (clinic: Clinic) => void;
   onCall?: (clinic: Clinic) => void;
   isSelected?: boolean;
+  enableTwilioCall?: boolean;
+  symptoms?: string;
 }
 
 export default function ClinicCard({
@@ -29,8 +31,68 @@ export default function ClinicCard({
   onSchedule,
   onCall,
   isSelected,
+  enableTwilioCall = true,
+  symptoms,
 }: ClinicCardProps) {
   const [showMap, setShowMap] = useState(true);
+  const [isCallingClinic, setIsCallingClinic] = useState(false);
+  const [callStatus, setCallStatus] = useState<
+    "idle" | "calling" | "success" | "error"
+  >("idle");
+  const [callMessage, setCallMessage] = useState("");
+
+  // Handle Twilio call to clinic
+  const handleTwilioCall = async () => {
+    setIsCallingClinic(true);
+    setCallStatus("calling");
+    setCallMessage("Initiating call to clinic...");
+
+    try {
+      const response = await fetch("/api/twilio/call-clinic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clinicPhone: "16133028331", // Always use this test number
+          clinicName: clinic.name,
+          symptoms: symptoms,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setCallStatus("success");
+        setCallMessage(
+          `Call initiated! We're contacting ${clinic.name} on your behalf. You'll receive a callback with appointment details.`,
+        );
+        onCall?.(clinic);
+      } else {
+        setCallStatus("error");
+        setCallMessage(
+          data.error || "Failed to initiate call. Please try calling directly.",
+        );
+      }
+    } catch (error) {
+      console.error("Error calling clinic:", error);
+      setCallStatus("error");
+      setCallMessage("Failed to initiate call. Please try calling directly.");
+    }
+  };
+
+  const handleCallClick = (e: React.MouseEvent) => {
+    if (enableTwilioCall) {
+      e.preventDefault();
+      handleTwilioCall();
+    } else {
+      onCall?.(clinic);
+    }
+  };
+
+  const closeCallModal = () => {
+    setIsCallingClinic(false);
+    setCallStatus("idle");
+    setCallMessage("");
+  };
 
   // Generate Google Maps embed URL
   const getMapUrl = () => {
@@ -140,17 +202,34 @@ export default function ClinicCard({
 
         {/* Action Buttons */}
         <div className="grid grid-cols-3 gap-2">
-          {/* Call Button */}
-          <a
-            href={`tel:${clinic.phone}`}
-            onClick={() => onCall?.(clinic)}
-            className="flex flex-col items-center gap-1 p-2 rounded-lg bg-green-50 hover:bg-green-100 dark:bg-green-900/20 dark:hover:bg-green-900/40 transition-colors"
-          >
-            <span className="text-xl">📞</span>
-            <span className="text-xs font-medium text-green-700 dark:text-green-400">
-              Call
-            </span>
-          </a>
+          {/* Call Button - Uses Twilio if enabled */}
+          {enableTwilioCall ? (
+            <button
+              onClick={handleCallClick}
+              disabled={callStatus === "calling"}
+              className="flex flex-col items-center gap-1 p-2 rounded-lg bg-green-50 hover:bg-green-100 dark:bg-green-900/20 dark:hover:bg-green-900/40 transition-colors disabled:opacity-50"
+            >
+              {callStatus === "calling" ? (
+                <span className="text-xl animate-pulse">📞</span>
+              ) : (
+                <span className="text-xl">📞</span>
+              )}
+              <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                {callStatus === "calling" ? "Calling..." : "Auto Call"}
+              </span>
+            </button>
+          ) : (
+            <a
+              href={`tel:${clinic.phone}`}
+              onClick={() => onCall?.(clinic)}
+              className="flex flex-col items-center gap-1 p-2 rounded-lg bg-green-50 hover:bg-green-100 dark:bg-green-900/20 dark:hover:bg-green-900/40 transition-colors"
+            >
+              <span className="text-xl">📞</span>
+              <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                Call
+              </span>
+            </a>
+          )}
 
           {/* Schedule Button */}
           <button
@@ -192,6 +271,75 @@ export default function ClinicCard({
           </a>
         )}
       </div>
+
+      {/* Call Status Modal */}
+      {isCallingClinic && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-zinc-800 rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <div className="text-center">
+              {callStatus === "calling" && (
+                <>
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <span className="text-3xl animate-bounce">📞</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                    Calling {clinic.name}
+                  </h3>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Our assistant is calling the clinic on your behalf...
+                  </p>
+                  <div className="mt-4 flex justify-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-teal-500 border-t-transparent"></div>
+                  </div>
+                </>
+              )}
+
+              {callStatus === "success" && (
+                <>
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                    <span className="text-3xl">✅</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                    Call Initiated!
+                  </h3>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    {callMessage}
+                  </p>
+                </>
+              )}
+
+              {callStatus === "error" && (
+                <>
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                    <span className="text-3xl">❌</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                    Call Failed
+                  </h3>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+                    {callMessage}
+                  </p>
+                  <a
+                    href={`tel:${clinic.phone}`}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <span>📞</span> Call Directly: {clinic.phone}
+                  </a>
+                </>
+              )}
+
+              {callStatus !== "calling" && (
+                <button
+                  onClick={closeCallModal}
+                  className="mt-4 w-full py-2 px-4 bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

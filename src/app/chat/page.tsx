@@ -76,6 +76,7 @@ export default function ChatPage() {
     label: "Listening",
     description: "Tell me what's going on",
   });
+  const [conversationSymptoms, setConversationSymptoms] = useState<string>("");
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(true);
@@ -130,18 +131,19 @@ export default function ChatPage() {
   // Initialize speech recognition
   useEffect(() => {
     // Check if browser supports speech recognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       setSpeechSupported(true);
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      recognition.lang = "en-US";
 
       recognition.onresult = (event) => {
         const transcript = Array.from(event.results)
-          .map(result => result[0].transcript)
-          .join('');
+          .map((result) => result[0].transcript)
+          .join("");
         setInputValue(transcript);
       };
 
@@ -150,7 +152,7 @@ export default function ChatPage() {
       };
 
       recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
+        console.error("Speech recognition error:", event.error);
         setIsListening(false);
       };
 
@@ -172,7 +174,7 @@ export default function ChatPage() {
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
-      setInputValue(''); // Clear input when starting to listen
+      setInputValue(""); // Clear input when starting to listen
       recognitionRef.current.start();
       setIsListening(true);
     }
@@ -341,6 +343,14 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setIsTyping(true);
+
+    // Track symptoms from user messages for Twilio calls
+    // Accumulate symptom descriptions from user messages
+    setConversationSymptoms((prev) => {
+      const newSymptoms = prev ? `${prev}, ${messageText}` : messageText;
+      // Keep only last 200 chars to avoid overly long messages
+      return newSymptoms.slice(-200);
+    });
 
     if (mightSearchClinics) {
       setIsSearchingClinics(true);
@@ -561,6 +571,7 @@ export default function ChatPage() {
                       clinics={message.clinics}
                       onSchedule={handleScheduleClinic}
                       onCall={handleCallClinic}
+                      symptoms={conversationSymptoms}
                     />
                   )}
               </div>
@@ -684,13 +695,17 @@ export default function ChatPage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyPress}
-                placeholder={isListening ? "Listening..." : "Type or speak your health question..."}
+                placeholder={
+                  isListening
+                    ? "Listening..."
+                    : "Type or speak your health question..."
+                }
                 rows={1}
                 disabled={isTyping}
                 className={`w-full resize-none rounded-xl border bg-zinc-50 px-4 py-3 pr-12 text-zinc-900 placeholder-zinc-400 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 ${
-                  isListening 
-                    ? 'border-red-400 ring-2 ring-red-400/30 dark:border-red-500' 
-                    : 'border-zinc-300 dark:border-zinc-700'
+                  isListening
+                    ? "border-red-400 ring-2 ring-red-400/30 dark:border-red-500"
+                    : "border-zinc-300 dark:border-zinc-700"
                 }`}
               />
               {isListening && (
@@ -709,8 +724,8 @@ export default function ChatPage() {
                 disabled={isTyping}
                 className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   isListening
-                    ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse'
-                    : 'bg-zinc-200 text-zinc-600 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                    ? "bg-red-500 text-white hover:bg-red-600 animate-pulse"
+                    : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
                 }`}
                 title={isListening ? "Stop listening" : "Start voice input"}
               >
