@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import * as userService from "@/lib/services/user.service";
 
 // GET /api/auth/check-user?email=... - Check if user exists and their status
 export async function GET(request: NextRequest) {
@@ -14,17 +14,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        isOnboarded: true,
-        childName: true,
-        childAge: true,
-      },
-    });
+    const user = await userService.findUserByEmail(email);
 
     if (!user) {
       return NextResponse.json({
@@ -39,8 +29,6 @@ export async function GET(request: NextRequest) {
         id: user.id,
         email: user.email,
         name: user.name,
-        childName: user.childName,
-        childAge: user.childAge,
       },
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import * as userService from "@/lib/services/user.service";
 
 // POST /api/auth/login - Authenticate user
 export async function POST(request: NextRequest) {
@@ -14,10 +14,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    // Find user with password for auth
+    const user = await userService.getUserForAuth(email);
 
     if (!user) {
       return NextResponse.json(

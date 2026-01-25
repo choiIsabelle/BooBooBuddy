@@ -48,6 +48,13 @@ export interface LLMContext {
     address: string;
     phone: string;
   } | null;
+  // User profile data from database (for personalized healthcare context)
+  userProfile?: {
+    name: string | null;
+    allergies: string[];
+    medicalConditions: string[];
+    preferredClinic: string | null;
+  } | null;
   toolResults?: Array<{
     toolName: string;
     result: unknown;
@@ -225,6 +232,24 @@ Only respond with the JSON object, no other text.`;
 function buildSystemPrompt(context: LLMContext): string {
   const statePrompt = getSystemPromptForState(context.state);
 
+  // Build user profile context if available (from database)
+  let userProfileInfo = "";
+  if (context.userProfile) {
+    const profile = context.userProfile;
+    userProfileInfo = `
+IMPORTANT - User's Medical Profile (from their account):
+${profile.name ? `- User's name: ${profile.name}` : ""}
+${profile.allergies.length > 0 ? `- Known allergies: ${profile.allergies.join(", ")}` : "- No known allergies on file"}
+${profile.medicalConditions.length > 0 ? `- Pre-existing medical conditions: ${profile.medicalConditions.join(", ")}` : "- No pre-existing conditions on file"}
+${profile.preferredClinic ? `- Preferred clinic: ${profile.preferredClinic}` : ""}
+
+Use this medical history to provide personalized advice. For example:
+- If they have epilepsy and report a headache, consider if it could be seizure-related
+- If they have allergies, be careful with medication recommendations
+- Address them by name if known
+`;
+  }
+
   // Add current context information
   const contextInfo = `
 Current conversation context:
@@ -250,7 +275,7 @@ Always include:
 - "toolCall": If you need to execute a tool (clinic_search, schedule_call, or escalate)
 `;
 
-  return `${statePrompt}\n\n${contextInfo}\n\n${schemaInfo}`;
+  return `${statePrompt}\n\n${userProfileInfo}\n\n${contextInfo}\n\n${schemaInfo}`;
 }
 
 // For testing without OpenAI

@@ -14,6 +14,10 @@ import {
 import { executeTool } from "@/lib/tools";
 import { ConversationState } from "@/lib/types";
 
+// Type-safe wrapper for Prisma to work around TypeScript cache issues
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = prisma as any;
+
 // Use mock LLM only if USE_MOCK_LLM is explicitly set to true, or if no API keys are available
 const useMockLLM =
   process.env.USE_MOCK_LLM === "true" ||
@@ -28,6 +32,7 @@ console.log("   Using mock LLM:", useMockLLM);
 // Helper to parse JSON array stored as string
 function parseJsonArray<T>(value: string | null | undefined): T[] {
   if (!value) return [];
+  if (Array.isArray(value)) return value as T[];  // Already an array
   try {
     return JSON.parse(value) as T[];
   } catch {
@@ -154,23 +159,48 @@ export async function POST(request: NextRequest) {
       console.log(`🌐 Browser geolocation: ${browserLocation}`);
     }
 
-    // Fetch user's profile location if userId is provided
+    // Fetch user's full profile if userId is provided (for personalized healthcare context)
     let userProfileLocation: string | null = null;
+    let userProfile: {
+      name: string | null;
+      allergies: string[];
+      medicalConditions: string[];
+      preferredClinic: string | null;
+    } | null = null;
+    
     if (userId) {
-      const user = await prisma.user.findUnique({
+      const user = await db.user.findUnique({
         where: { id: userId },
-        select: { location: true },
+        select: { 
+          name: true,
+          location: true,
+          allergies: true,
+          medicalConditions: true,
+          preferredClinic: true,
+        },
       });
-      userProfileLocation = user?.location || null;
-      console.log(
-        `👤 User profile location: ${userProfileLocation || "not set"}`,
-      );
+      
+      if (user) {
+        userProfileLocation = user.location || null;
+        // Parse JSON arrays for allergies and medical conditions
+        userProfile = {
+          name: user.name,
+          allergies: parseJsonArray(user.allergies),
+          medicalConditions: parseJsonArray(user.medicalConditions),
+          preferredClinic: user.preferredClinic,
+        };
+        console.log(`👤 User profile loaded:`);
+        console.log(`   Name: ${userProfile.name || "(not set)"}`);
+        console.log(`   Location: ${userProfileLocation || "(not set)"}`);
+        console.log(`   Allergies: ${userProfile.allergies.length > 0 ? userProfile.allergies.join(", ") : "(none)"}`);
+        console.log(`   Medical conditions: ${userProfile.medicalConditions.length > 0 ? userProfile.medicalConditions.join(", ") : "(none)"}`);
+      }
     }
 
     // Get or create conversation
     let conversation;
     if (conversationId) {
-      conversation = await prisma.conversation.findUnique({
+      conversation = await db.conversation.findUnique({
         where: { id: conversationId },
         include: { messages: { orderBy: { createdAt: "asc" }, take: 20 } },
       });
@@ -183,7 +213,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Create new conversation
-      conversation = await prisma.conversation.create({
+      conversation = await db.conversation.create({
         data: {
           state: "GREETING",
           symptoms: "[]",
@@ -199,7 +229,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Save user message
-    await prisma.message.create({
+    await db.message.create({
       data: {
         conversationId: conversation.id,
         role: "USER",
@@ -249,7 +279,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Update state
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { state: "PRESENTING_OPTIONS" },
       });
@@ -258,7 +288,7 @@ export async function POST(request: NextRequest) {
         ? "I found some clinics near your location. Here are your options:"
         : "I had trouble finding clinics. Please try again.";
 
-      const assistantMessage = await prisma.message.create({
+      const assistantMessage = await db.message.create({
         data: {
           conversationId: conversation.id,
           role: "ASSISTANT",
@@ -291,7 +321,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Save location
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { location: earlyLocationFromMessage },
       });
@@ -310,7 +340,7 @@ export async function POST(request: NextRequest) {
         ? `I found some clinics near ${earlyLocationFromMessage} for you. Here are your options:`
         : "I had trouble finding clinics. Please try again.";
 
-      const assistantMessage = await prisma.message.create({
+      const assistantMessage = await db.message.create({
         data: {
           conversationId: conversation.id,
           role: "ASSISTANT",
@@ -319,7 +349,7 @@ export async function POST(request: NextRequest) {
       });
 
       // Update state to PRESENTING_OPTIONS
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { state: "PRESENTING_OPTIONS" },
       });
@@ -346,7 +376,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Update state to SEARCHING_CLINICS
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { state: "SEARCHING_CLINICS" },
       });
@@ -354,7 +384,7 @@ export async function POST(request: NextRequest) {
       const responseMsg =
         "I'd be happy to help you find a nearby clinic! What's your zip code or city so I can search for clinics in your area?";
 
-      const assistantMessage = await prisma.message.create({
+      const assistantMessage = await db.message.create({
         data: {
           conversationId: conversation.id,
           role: "ASSISTANT",
@@ -388,11 +418,12 @@ export async function POST(request: NextRequest) {
     // Get LLM response
     const llmContext: LLMContext = {
       state: context.currentState as ConversationState,
-      userName: context.userName,
+      userName: context.userName || userProfile?.name,  // Use profile name if conversation doesn't have one
       symptoms: context.symptoms,
       symptomSeverity: context.symptomSeverity,
       location: context.location,
       healthConcern: context.healthConcern,
+      userProfile,  // Include user's medical profile for personalized healthcare context
     };
 
     const llmResponse = useMockLLM
@@ -429,7 +460,7 @@ export async function POST(request: NextRequest) {
 
     // Save location to conversation if newly detected
     if (locationFromMessage && !context.location) {
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { location: locationFromMessage },
       });
@@ -475,7 +506,7 @@ export async function POST(request: NextRequest) {
 
       // Update state to SEARCHING_CLINICS so we continue the flow
       workflowResult.newState = "SEARCHING_CLINICS" as ConversationState;
-      await prisma.conversation.update({
+      await db.conversation.update({
         where: { id: conversation.id },
         data: { state: "SEARCHING_CLINICS" },
       });
@@ -504,7 +535,7 @@ export async function POST(request: NextRequest) {
       // Force state to SEARCHING_CLINICS if not already
       if (workflowResult.newState !== "SEARCHING_CLINICS") {
         workflowResult.newState = "SEARCHING_CLINICS" as ConversationState;
-        await prisma.conversation.update({
+        await db.conversation.update({
           where: { id: conversation.id },
           data: { state: "SEARCHING_CLINICS" },
         });
@@ -554,7 +585,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Save assistant message
-    const assistantMessage = await prisma.message.create({
+    const assistantMessage = await db.message.create({
       data: {
         conversationId: conversation.id,
         role: "ASSISTANT",
@@ -597,7 +628,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const conversation = await prisma.conversation.findUnique({
+    const conversation = await db.conversation.findUnique({
       where: { id: conversationId },
       include: {
         messages: {

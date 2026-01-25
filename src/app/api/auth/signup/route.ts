@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import * as userService from "@/lib/services/user.service";
 
 // POST /api/auth/signup - Create a new user
 export async function POST(request: NextRequest) {
@@ -15,11 +15,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
+    const emailExists = await userService.emailExists(email);
 
-    if (existingUser) {
+    if (emailExists) {
       return NextResponse.json(
         { error: "User already exists" },
         { status: 409 }
@@ -28,12 +26,10 @@ export async function POST(request: NextRequest) {
 
     // Create new user
     // Note: In production, use proper password hashing (bcrypt, argon2)
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password, // TODO: Hash password before storing
-        name: name || null,
-      },
+    const user = await userService.createUser({
+      email,
+      password, // TODO: Hash password before storing
+      name: name || undefined,
     });
 
     return NextResponse.json({
