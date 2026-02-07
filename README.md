@@ -1,4 +1,4 @@
-# BooBooBuddy
+# BooBoo Buddy 🩹
 
 Submission for Dialogue's challenge at Concordia's 2026 Hackathon. BooBooBuddy addresses the need for agentic healthcare beyond a chatbot; BooBooBuddy consider's the user's comprehensive health background and goals to suggest immediate care aligning with the user's preferences. BooBooBuddy utilizes past health data and the nature of the user's current conversation to determine the proper protocol: call immediate care for the user from a local healthcare clinic, or continue advising.
 
@@ -153,9 +153,9 @@ GREETING → COLLECTING_SYMPTOMS → ASSESSING_SEVERITY → SEARCHING_CLINICS
 
 Built during ConUHacks X at Concordia University, January 24-25th 2026.
 
-@choiIsabelle
-@mchoi-cs
-@B-Gilb022
+- [@choiIsabelle](https://github.com/choiIsabelle)
+- [@mchoi-cs](https://github.com/mchoi-cs)
+- - [@@B-Gilb022](https://github.com/B-Gilb022)
 
 ## License
 
