@@ -1,9 +1,7 @@
 import twilio from "twilio";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-
-// Import the transcription store from the callback endpoint
-import { transcriptionStore } from "../transcription-callback/route";
+import { transcriptionStore } from "@/lib/transcription-store";
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;

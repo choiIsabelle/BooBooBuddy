@@ -1,20 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-
-// In-memory store for transcriptions (in production, use a database)
-// This allows the get-transcript endpoint to retrieve completed transcriptions
-const transcriptionStore = new Map<
-  string,
-  {
-    text: string;
-    timestamp: string;
-    recordingSid: string;
-  }
->();
-
-// Export the store so get-transcript can access it
-export { transcriptionStore };
+import { transcriptionStore } from "@/lib/transcription-store";
 
 /**
  * POST /api/twilio/transcription-callback
