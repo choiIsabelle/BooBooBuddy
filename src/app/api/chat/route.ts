@@ -721,8 +721,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       id: conversation.id,
       state: conversation.state,
-      childName: conversation.childName,
-      childAge: conversation.childAge,
       symptoms: parseJsonArray<string>(conversation.symptoms),
       messages: conversation.messages.map(
         (m: {

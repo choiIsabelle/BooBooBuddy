@@ -26,8 +26,6 @@ export const MessageSchema = z.object({
 export const ConversationSchema = z.object({
   id: z.string(),
   state: z.string(),
-  childName: z.string().nullable(),
-  childAge: z.number().nullable(),
   symptoms: z.array(z.string()),
   messages: z.array(MessageSchema),
 });

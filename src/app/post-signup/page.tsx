@@ -7,8 +7,6 @@ interface UserData {
   id: string;
   email: string;
   name: string;
-  childName?: string;
-  childAge?: number;
 }
 
 export default function PostSignupPage() {
