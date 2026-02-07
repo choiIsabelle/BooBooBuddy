@@ -21,8 +21,6 @@ export async function GET(request: NextRequest) {
         email: true,
         name: true,
         isOnboarded: true,
-        childName: true,
-        childAge: true,
       },
     });
 
@@ -39,8 +37,6 @@ export async function GET(request: NextRequest) {
         id: user.id,
         email: user.email,
         name: user.name,
-        childName: user.childName,
-        childAge: user.childAge,
       },
     });
   } catch (error) {
