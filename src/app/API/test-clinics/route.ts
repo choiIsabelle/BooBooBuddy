@@ -1,4 +1,4 @@
-import { getNearbyClinicDetails } from "../GooglePlaces";
+import { getNearbyClinicDetails } from "@/lib/google-places";
 
 /**
  * Test API route - Returns clinic data as JSON

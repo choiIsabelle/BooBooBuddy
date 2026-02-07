@@ -76,6 +76,7 @@ export default function ClinicCard({
     bookingDeclined?: boolean;
     declineReason?: string | null;
   } | null>(null);
+  const demoPhoneNumber = process.env.DEMO_PHONE_NUMBER;
 
   // Generate time slots every 30 minutes within a range
   const generateTimeSlots = (start: string, end: string): string[] => {
@@ -285,7 +286,7 @@ export default function ClinicCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clinicPhone: "16133028331", // Always use this test number
+          clinicPhone: demoPhoneNumber, // Always use this test number
           clinicName: clinic.name,
           symptoms: symptoms,
           isBookingCall: true,
@@ -325,7 +326,7 @@ export default function ClinicCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clinicPhone: "16133028331", // Always use this test number
+          clinicPhone: demoPhoneNumber, // Always use this test number
           clinicName: clinic.name,
           symptoms: symptoms,
         }),

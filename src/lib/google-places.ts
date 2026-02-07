@@ -150,21 +150,21 @@ export async function getNearbyClinicDetails(
     const topPlaces = nearbyData.results.slice(0, limit);
 
     // Step 3: Fetch detailed information for each place in parallel
-    const detailsPromises = topPlaces.map((place: any) =>
+    const detailsPromises = topPlaces.map((place: { place_id: string }) =>
       getPlaceDetails(place.place_id),
     );
 
     const detailsResults = await Promise.all(detailsPromises);
 
     // Step 4: Transform into clinic objects
-    const clinics = topPlaces.map((place: any, index: number) => {
+    const clinics = topPlaces.map((place: { place_id: string; name: string; geometry?: { location?: { lat: number; lng: number } }; vicinity?: string; rating?: number }, index: number) => {
       const details = detailsResults[index];
       const geometry = place.geometry?.location;
       const distance = calculateDistance(
         lat,
         lng,
-        geometry?.lat,
-        geometry?.lng,
+        geometry?.lat ?? 0,
+        geometry?.lng ?? 0,
       );
 
       return {
