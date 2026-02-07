@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { makeCallWithMessage } from "../../Twilio";
+import { makeCallWithMessage } from "@/lib/twilio";
 
 /**
  * Synthesizes raw symptom text into a clear, medical summary using the LLM

@@ -1,4 +1,4 @@
-import { makeCallWithMessage } from "../../Twilio";
+import { makeCallWithMessage } from "@/lib/twilio";
 
 /**
  * POST /api/twilio/test
