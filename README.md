@@ -1,5 +1,5 @@
 # BooBoo Buddy 🩹
-
+## Demo! [Click here to try BooBoo Buddy live](https://boo-boo-buddy-p3hz.vercel.app/login)
 Submission for Dialogue's challenge at Concordia's 2026 Hackathon. BooBooBuddy addresses the need for agentic healthcare beyond a chatbot; BooBooBuddy consider's the user's comprehensive health background and goals to suggest immediate care aligning with the user's preferences. BooBooBuddy utilizes past health data and the nature of the user's current conversation to determine the proper protocol: call immediate care for the user from a local healthcare clinic, or continue advising.
 
 ## How It Works
