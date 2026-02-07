@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 interface UserData {
@@ -9,7 +9,7 @@ interface UserData {
   name: string;
 }
 
-export default function PostSignupPage() {
+function PostSignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
@@ -373,5 +373,17 @@ export default function PostSignupPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function PostSignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-zinc-900 dark:to-zinc-800">
+        <div className="text-teal-600">Loading...</div>
+      </div>
+    }>
+      <PostSignupContent />
+    </Suspense>
   );
 }
