@@ -155,7 +155,7 @@ Built during ConUHacks X at Concordia University, January 24-25th 2026.
 
 - [@choiIsabelle](https://github.com/choiIsabelle)
 - [@mchoi-cs](https://github.com/mchoi-cs)
-- - [@@B-Gilb022](https://github.com/B-Gilb022)
+- [@@B-Gilb022](https://github.com/B-Gilb022)
 
 ## License
 
